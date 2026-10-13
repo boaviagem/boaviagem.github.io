@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><title>Testes</title>
+<pre id="out">rodando…</pre>
+<script type="module">
+const out = document.getElementById('out');
+import('./logic.test.mjs').then(m => out.textContent = m.default, e => out.textContent = 'FALHOU: ' + e.message);
+</script>

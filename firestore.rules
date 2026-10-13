@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// Regras de segurança do Firestore — app de comensais.
+// Papéis (users/{uid}.role):
+//   'admin'    administrador do sistema
+//   'comensal' gerencia as próprias refeições
+//   'cozinha'  administradora da cozinha: vê totais (só iniciais), cria contas de auxiliares, manda mensagens
+//   'auxiliar' auxiliar de cozinha: mesma visão, sem criar contas nem mandar mensagens
+// A cozinha NÃO lê a coleção "names" (nomes completos e e-mails).
+
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userPath() { return /databases/$(db)/documents/users/$(request.auth.uid); }
+    function hasProfile() { return signedIn() && exists(userPath()); }
+    function me() { return get(userPath()).data; }
+    function isAdmin() { return hasProfile() && me().role == 'admin'; }
+    function isChief() { return hasProfile() && me().role == 'cozinha'; }
+    function isKitchen() { return hasProfile() && me().role in ['cozinha', 'auxiliar']; }
+    function owns(pid) { return hasProfile() && me().get('personId', null) == pid; }
+    function bootstrapPath() { return /databases/$(db)/documents/settings/bootstrap; }
+    function onlyKeys(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    // Perfis de acesso
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin()
+        || (isChief() && resource.data.role == 'auxiliar'));
+      allow write: if isAdmin();
+      // A administradora da cozinha cria/remove apenas contas de auxiliar.
+      allow create: if isChief() && request.resource.data.role == 'auxiliar'
+        && request.resource.data.personId == null;
+      allow delete: if isChief() && resource.data.role == 'auxiliar';
+      // Cada um pode apenas desligar o aviso de "trocar senha no primeiro acesso".
+      allow update: if signedIn() && request.auth.uid == uid
+        && onlyKeys(['mustChange']) && request.resource.data.mustChange == false;
+      // Primeiro acesso: o primeiro usuário pode se tornar admin uma única vez.
+      allow create: if signedIn() && request.auth.uid == uid
+        && !exists(bootstrapPath()) && existsAfter(bootstrapPath())
+        && request.resource.data.role == 'admin';
+    }
+
+    match /settings/bootstrap {
+      allow read: if signedIn();
+      allow create: if signedIn() && !exists(bootstrapPath())
+        && getAfter(userPath()).data.role == 'admin'
+        && request.resource.data.by == request.auth.uid;
+    }
+
+    match /settings/{id} {
+      allow read: if hasProfile();
+      allow write: if isAdmin() && id != 'bootstrap';
+    }
+
+    // Comensais: iniciais, regime, regra padrão (sem nome completo)
+    match /people/{pid} {
+      allow read: if isAdmin() || isKitchen() || owns(pid);
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (owns(pid) && onlyKeys(['defaultRule', 'updatedAt']));
+    }
+
+    // Nome completo e e-mail — invisíveis para a cozinha
+    match /names/{pid} {
+      allow read: if isAdmin() || owns(pid);
+      allow write: if isAdmin();
+    }
+
+    // Alterações pontuais (por dia e refeição)
+    match /overrides/{id} {
+      allow read: if isAdmin() || isKitchen() || owns(resource.data.personId);
+      allow create: if isAdmin() || owns(request.resource.data.personId);
+      allow update: if isAdmin() || (owns(resource.data.personId) && owns(request.resource.data.personId));
+      allow delete: if isAdmin() || owns(resource.data.personId);
+    }
+
+    // Regras temporárias (viagens, períodos especiais)
+    match /periods/{id} {
+      allow read: if isAdmin() || isKitchen() || owns(resource.data.personId);
+      allow create: if isAdmin() || owns(request.resource.data.personId);
+      allow update: if isAdmin() || (owns(resource.data.personId) && owns(request.resource.data.personId));
+      allow delete: if isAdmin() || owns(resource.data.personId);
+    }
+
+    // Recados do administrador para a cozinha, por dia (podem somar pessoas extras)
+    match /dayNotes/{id} {
+      allow read: if isAdmin() || isKitchen();
+      allow write: if isAdmin();
+    }
+
+    // Mensagens entre a administradora da cozinha (k2a) e o administrador (a2k)
+    match /messages/{id} {
+      allow read: if isAdmin() || isKitchen();
+      allow create: if request.resource.data.from == request.auth.uid
+        && ((isAdmin() && request.resource.data.dir == 'a2k') || (isChief() && request.resource.data.dir == 'k2a'));
+      allow update: if onlyKeys(['readAt'])
+        && ((isAdmin() && resource.data.dir == 'k2a') || (isChief() && resource.data.dir == 'a2k'));
+      allow delete: if isAdmin();
+    }
+
+    // "Fotografia" diária dos totais, usada nas estatísticas
+    match /daily/{date} {
+      allow read: if isAdmin() || isKitchen();
+      allow write: if isAdmin() || isKitchen();
+    }
+  }
+}
