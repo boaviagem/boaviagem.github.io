@@ -728,7 +728,7 @@ async function viewTemporarias() {
   const isAbsent = (g) => L.MEALS.every((m) => [0, 1, 2, 3, 4, 5, 6].every((d) => !g?.[d]?.[m]));
   const when = (p) => p.repeat
     ? `${L.describeRepeat(p.repeat)} · desde ${L.fmtDate(p.from)}${p.to && p.to !== L.NO_END ? ` até ${L.fmtDate(p.to)}` : ''}`
-    : `${L.fmtDate(p.from)} a ${L.fmtDate(p.to)}`;
+    : L.describePeriod(p);
   const items = pers.map((p) => `<div class="list-item ${p.to < t ? 'inactive' : ''}">
       <div><strong>${esc(p.label || (p.repeat ? 'Repetição mensal' : isAbsent(p.grid) ? 'Ausência' : 'Regra temporária'))}</strong>
         ${p.repeat ? '<span class="badge plus">todo mês</span>' : ''}<br>
@@ -756,6 +756,9 @@ async function viewTemporarias() {
       </fieldset>
       <div class="row"><label><span id="lbl-from">De</span> <input type="date" name="from" value="${t}" required></label>
         <label><span id="lbl-to">Até (inclusive)</span> <input type="date" name="to" value="${t}"></label></div>
+      <div class="row" id="mealbounds">
+        <label><span id="lbl-fm"></span> ${sel('fromMeal', L.MEALS.map((m) => [m, L.MEAL_LABEL[m]]), 'cafe')}</label>
+        <label><span id="lbl-tm"></span> ${sel('toMeal', L.MEALS.map((m) => [m, L.MEAL_LABEL[m]]), 'jantar')}</label></div>
       <div class="seg"><label><input type="radio" name="kind" value="aus" checked> Ausente (nenhuma refeição)</label>
         <label><input type="radio" name="kind" value="custom"> Regra personalizada</label></div>
       <div id="per-grid" hidden>${gridEditor(person.defaultRule)}</div>
@@ -772,6 +775,10 @@ async function viewTemporarias() {
     $('#repbox').hidden = !monthly;
     $('#lbl-from').textContent = monthly ? 'Valendo a partir de' : 'De';
     $('#lbl-to').textContent = monthly ? 'Até (opcional)' : 'Até (inclusive)';
+    $('#mealbounds').hidden = monthly;
+    const aus = f.kind.value === 'aus';
+    $('#lbl-fm').textContent = aus ? 'Primeira refeição que não faz (no 1º dia)' : 'Começa no 1º dia a partir do';
+    $('#lbl-tm').textContent = aus ? 'Última refeição que não faz (no último dia)' : 'Termina no último dia depois do';
     if (monthly) $('#repdesc').textContent = 'Ex.: ' + L.describeRepeat(repeatOf()) + '.';
   };
   f.addEventListener('change', (e) => {
@@ -785,11 +792,14 @@ async function viewTemporarias() {
     const to = monthly ? f.to.value || L.NO_END : f.to.value;
     if (!to) return toast('Informe a data final.');
     if (to < f.from.value) return toast('A data final é anterior à inicial.');
+    if (!monthly && to === f.from.value && L.MEALS.indexOf(f.fromMeal.value) > L.MEALS.indexOf(f.toMeal.value)) {
+      return toast('No mesmo dia, a primeira refeição não pode vir depois da última.');
+    }
     guard(async () => {
       const np = {
         personId: person.id, from: f.from.value, to, label: f.label.value.trim(),
         grid: f.kind.value === 'custom' ? readGrid(gbox) : L.emptyGrid(),
-        ...(monthly ? { repeat: repeatOf() } : {}),
+        ...(monthly ? { repeat: repeatOf() } : { fromMeal: f.fromMeal.value, toMeal: f.toMeal.value }),
       };
       const items = await lateRuleCheck(person, (a) => ({ periods: [...a.periods, { ...np, createdAt: Date.now() }] }));
       if (!items) return;
@@ -813,6 +823,10 @@ async function viewTemporarias() {
 // ---------- Pessoas (admin) ----------
 async function viewPessoas() {
   await loadPeople();
+  const tabs = `<div class="row tabs">${[['cadastro', 'Cadastro'], ['geral', 'Visão geral das regras']].map(([k, l]) =>
+    `<button data-tab="${k}" class="${(S.pessoasTab || 'cadastro') === k ? 'primary' : ''}">${l}</button>`).join('')}</div>`;
+  const bindTabs = () => $$('[data-tab]').forEach((b) => b.addEventListener('click', () => { S.pessoasTab = b.dataset.tab; route(); }));
+  if (S.pessoasTab === 'geral') { main.innerHTML = tabs + await overviewHtml(); bindTabs(); bindOverview(); return; }
   S.users = await api.listUsers();
   const userOf = (uid) => S.users.find((u) => u.id === uid);
   const rows = S.people.map((p) => {
@@ -826,7 +840,7 @@ async function viewPessoas() {
   const kitchens = S.users.filter((u) => isKitchenRole(u.role)).map((u) => `<div class="list-item">
       <span>${esc(u.email)}<br><span class="small muted">${ROLE_NAME[u.role]}</span></span>
       <button class="danger" data-rmk="${u.id}">Remover acesso</button></div>`).join('');
-  main.innerHTML = `
+  main.innerHTML = `${tabs}
     <div class="card"><div class="row spread"><h2>Comensais</h2>
       <span class="row"><button id="b-import">Importar planilha</button><button class="primary" id="b-add">+ Adicionar</button></span></div>
       ${!S.myPid ? '<p class="alert small">Você ainda não está cadastrado como comensal. Use “+ Adicionar” e escolha “É a minha conta”.</p>' : ''}
@@ -838,6 +852,7 @@ async function viewPessoas() {
       <form id="f-k" class="stack" style="margin-top:10px"><h3>Criar conta da administradora da cozinha</h3>
         ${accountFields()}
         <button type="submit">Criar conta</button></form></div>`;
+  bindTabs();
   $('#b-add').addEventListener('click', () => personForm(null));
   $('#b-import').addEventListener('click', () => importDialog());
   $$('[data-edit]').forEach((b) => b.addEventListener('click', () => personForm(personById(b.dataset.edit))));
@@ -851,6 +866,38 @@ async function viewPessoas() {
     if (!confirm('Remover o acesso desta conta? (O login continua existindo no Firebase, mas não verá mais nada.)')) return;
     guard(async () => { await api.removeUserProfile(b.dataset.rmk); route(); }, b);
   }));
+}
+
+// Visão geral (administrador): regra padrão de todos + temporárias em vigor
+async function overviewHtml() {
+  const t = L.today();
+  const pers = await api.listPeriodsFrom(t);
+  const people = S.people.filter((p) => p.active !== false);
+  const SYM = { N: '✓', C: '+c', T: '+t', L: 'lv' };
+  const cell = (code) => {
+    const c = L.parseCell(code);
+    return c.on ? `<td class="on" title="${esc(L.WHEN_LABEL[c.when])}${c.time ? ' ' + c.time : ''}">${SYM[c.when]}${c.time ? `<sup>${c.time.replace(':00', 'h')}</sup>` : ''}</td>` : '<td></td>';
+  };
+  const slots = GRID_ORDER.flatMap((d) => L.MEALS.map((m) => [d, m]));
+  const totals = slots.map(([d, m]) => people.filter((p) => L.parseCell(p.defaultRule?.[d]?.[m]).on).length);
+  const rows = people.map((p) => {
+    const temp = pers.filter((x) => x.personId === p.id).sort((a, b) => a.from.localeCompare(b.from))
+      .map((x) => `<div>${esc(x.label || (x.repeat ? 'Todo mês' : 'Ausência'))}: ${esc(L.describePeriod(x))}</div>`).join('');
+    return `<tr data-pid="${p.id}" class="clickable"><th class="sticky" title="${esc(fullName(p.id))}">${esc(p.initials)}${p.diet ? ' <span class="badge">R</span>' : ''}${p.guest ? ' <span class="badge plus">conv.</span>' : ''}</th>
+      ${slots.map(([d, m]) => cell(p.defaultRule?.[d]?.[m])).join('')}<td class="temp">${temp}</td></tr>`;
+  }).join('');
+  return `<div class="card"><h2>Visão geral das regras</h2>
+    <p class="muted small">Regra padrão semanal de cada comensal ativo e as regras temporárias em vigor ou futuras.
+      Toque numa linha para editar. ✓ normal · +c mais cedo · +t mais tarde · lv para levar · <span class="badge">R</span> regime.</p>
+    <div class="tablewrap"><table class="overview">
+      <thead><tr><th class="sticky" rowspan="2"></th>${GRID_ORDER.map((d) => `<th colspan="3" class="dayh">${L.DOW[d]}</th>`).join('')}<th rowspan="2">Temporárias</th></tr>
+        <tr>${GRID_ORDER.map(() => L.MEALS.map((m, i) => `<th class="${i === 0 ? 'dayh' : ''}">${'CAJ'[i]}</th>`).join('')).join('')}</tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><th class="sticky">Total</th>${totals.map((n) => `<td>${n}</td>`).join('')}<td class="muted small">pela regra padrão</td></tr></tfoot>
+    </table></div></div>`;
+}
+function bindOverview() {
+  $$('.overview tr[data-pid]').forEach((tr) => tr.addEventListener('click', () => { S.targetPid = tr.dataset.pid; location.hash = '#/padrao'; }));
 }
 
 function personForm(p) {

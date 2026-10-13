@@ -142,6 +142,18 @@ details.residents summary { cursor: pointer; font-size: .85rem; color: var(--mut
 .adminbar { margin-top: 10px; gap: 6px; }
 button.small { padding: 4px 10px; font-size: .85rem; }
 
+/* Visão geral das regras */
+.tabs { margin-bottom: 12px; }
+.overview { font-size: .82rem; border-collapse: separate; border-spacing: 0; }
+.overview th, .overview td { padding: 4px 5px; text-align: center; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.overview .dayh { border-left: 2px solid var(--line); }
+.overview tbody td:nth-child(3n+2) { border-left: 2px solid var(--line); }
+.overview td.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.overview td sup { font-weight: 400; font-size: .65rem; }
+.overview .sticky { position: sticky; left: 0; background: var(--card); text-align: left; z-index: 1; }
+.overview td.temp { text-align: left; white-space: normal; min-width: 220px; font-size: .78rem; }
+.overview tfoot td, .overview tfoot th { font-weight: 700; border-top: 2px solid var(--line); }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }

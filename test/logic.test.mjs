@@ -140,5 +140,16 @@ assert.equal(s3.almoco.total, 27);
 assert.equal(s3.almoco.residents, 1); // RL
 assert.equal(s3.almoco.event.count, 25);
 
+// Ausência começando no jantar de ter e terminando no almoço de sex
+const trip = { personId: 'rl', from: '2026-10-13', to: '2026-10-16', fromMeal: 'jantar', toMeal: 'almoco', grid: L.emptyGrid(), createdAt: 5 };
+const onT = (d, m) => L.resolve(rl, d, m, [trip], null, {}).on;
+assert.equal(onT('2026-10-13', 'almoco'), true);
+assert.equal(onT('2026-10-13', 'jantar'), false);
+assert.equal(onT('2026-10-14', 'cafe'), false);
+assert.equal(onT('2026-10-16', 'almoco'), false);
+assert.equal(onT('2026-10-16', 'jantar'), true);
+assert.equal(L.describePeriod(trip), 'ter 13/10 (jantar) a sex 16/10 (almoço)');
+assert.equal(L.describePeriod({ from: '2026-10-13', to: '2026-10-14' }), 'ter 13/10 a qua 14/10');
+
 console.log('OK — todos os testes passaram');
 export default 'OK';

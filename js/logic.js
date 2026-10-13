@@ -110,10 +110,18 @@ function isNthWeekday(date, nth) {
   return Math.ceil(day / 7) === nth;
 }
 
-export function occursOn(p, date) {
+// Período único pode começar/terminar no meio do dia: fromMeal = 1ª refeição atingida no 1º dia,
+// toMeal = última refeição atingida no último dia (padrão: o dia inteiro).
+export function occursOn(p, date, meal) {
   if (p.from > date || (p.to || NO_END) < date) return false;
   const r = p.repeat;
-  if (!r) return true;
+  if (!r) {
+    if (!meal) return true;
+    const i = MEALS.indexOf(meal);
+    if (date === p.from && p.fromMeal && i < MEALS.indexOf(p.fromMeal)) return false;
+    if (date === p.to && p.toMeal && i > MEALS.indexOf(p.toMeal)) return false;
+    return true;
+  }
   for (let off = r.start || 0; off <= (r.end || 0); off++) {
     const anchor = addDays(date, -off);
     if (weekday(anchor) === r.dow && isNthWeekday(anchor, Number(r.nth))) return true;
@@ -130,10 +138,10 @@ export function describeRepeat(r) {
 }
 
 // Regra temporária vigente: a criada por último entre as que cobrem a data.
-export function activePeriod(periods, personId, date) {
+export function activePeriod(periods, personId, date, meal) {
   let best = null;
   for (const p of periods || []) {
-    if (p.personId !== personId || !occursOn(p, date)) continue;
+    if (p.personId !== personId || !occursOn(p, date, meal)) continue;
     if (!best || (p.createdAt || 0) > (best.createdAt || 0)) best = p;
   }
   return best;
@@ -141,7 +149,7 @@ export function activePeriod(periods, personId, date) {
 
 export function resolve(person, date, meal, periods, ovMap, settings) {
   settings = mergeSettings(settings);
-  const per = activePeriod(periods, person.id, date);
+  const per = activePeriod(periods, person.id, date, meal);
   const grid = per ? per.grid || emptyGrid() : person.defaultRule || emptyGrid();
   const c = parseCell(grid?.[weekday(date)]?.[meal]);
   const r = {
@@ -392,4 +400,12 @@ export function applyEvents(summary, events) {
     s.total = Math.max(0, Number(e.count) || 0) + (s.extras || 0);
   }
   return summary;
+}
+
+// Texto curto de um período: "ter 13/10 (jantar) a sex 16/10 (almoço)" ou a repetição mensal
+export function describePeriod(p) {
+  if (p.repeat) return describeRepeat(p.repeat) + (p.to && p.to !== NO_END ? ` até ${fmtDate(p.to).toLowerCase()}` : '');
+  const a = fmtDate(p.from).toLowerCase() + (p.fromMeal && p.fromMeal !== 'cafe' ? ` (${MEAL_SHORT[p.fromMeal].toLowerCase()})` : '');
+  const b = fmtDate(p.to).toLowerCase() + (p.toMeal && p.toMeal !== 'jantar' ? ` (${MEAL_SHORT[p.toMeal].toLowerCase()})` : '');
+  return p.from === p.to && !p.fromMeal && !p.toMeal ? a : `${a} a ${b}`;
 }
