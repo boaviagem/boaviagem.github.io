@@ -108,5 +108,37 @@ assert.equal(L.occursOn(last, '2026-10-30'), true);
 assert.equal(L.occursOn(last, '2026-10-23'), false);
 assert.equal(L.describeRepeat(rep.repeat), '1º domingo de cada mês (de sábado a domingo)');
 
+// Prazo de aviso (8h15): seg 12/10/2026
+const at = (d, h) => { const [y, mo, da] = d.split('-').map(Number); const [hh, mm] = h.split(':').map(Number); return new Date(y, mo - 1, da, hh, mm); };
+assert.equal(L.announceDate('2026-10-13', 'almoco'), '2026-10-13'); // ter almoço → ter
+assert.equal(L.announceDate('2026-10-14', 'cafe'), '2026-10-13');   // qua café → ter
+assert.equal(L.announceDate('2026-10-17', 'cafe'), '2026-10-16');   // sáb café → sex
+assert.equal(L.announceDate('2026-10-18', 'jantar'), '2026-10-16'); // dom jantar → sex
+assert.equal(L.announceDate('2026-10-19', 'cafe'), '2026-10-16');   // seg café → sex
+assert.equal(L.announceDate('2026-10-19', 'almoco'), '2026-10-19'); // seg almoço → seg
+assert.equal(L.mealStatus('2026-10-13', 'almoco', {}, at('2026-10-13', '08:14')), 'open');
+assert.equal(L.mealStatus('2026-10-13', 'almoco', {}, at('2026-10-13', '08:15')), 'late');
+assert.equal(L.mealStatus('2026-10-13', 'almoco', {}, at('2026-10-13', '15:00')), 'past');
+assert.equal(L.mealStatus('2026-10-13', 'jantar', {}, at('2026-10-12', '23:00')), 'open');
+assert.equal(L.mealStatus('2026-10-18', 'almoco', {}, at('2026-10-16', '09:00')), 'late');
+assert.equal(L.mealStatus('2026-10-18', 'almoco', {}, at('2026-10-15', '20:00')), 'open');
+assert.equal(L.mealStatus('2026-10-12', 'jantar', {}, at('2026-10-13', '07:00')), 'past');
+assert.equal(L.mealStatus('2026-10-13', 'almoco', { deadline: '09:00' }, at('2026-10-13', '08:30')), 'open');
+// sexta 9h: avisadas = café de sex (avisado na quinta, ainda não passou), almoço/jantar de sex, sáb, dom, café de seg
+const ann = L.announcedMeals({}, at('2026-10-16', '09:00')).map((x) => x.date.slice(8) + x.meal[0]);
+assert.deepEqual(ann, ['16c', '16a', '16j', '17c', '17a', '17j', '18c', '18a', '18j', '19c']);
+// Diferenças tardias
+const ovLate = L.overrideMap([{ personId: 'rl', date: '2026-10-16', meal: 'almoco', status: 'off' }]);
+const dif = L.lateDiffs({ person: rl, periods: [], ovMap: null }, { person: rl, periods: [], ovMap: ovLate }, {}, at('2026-10-16', '09:00'));
+assert.equal(dif.length, 1);
+assert.equal(dif[0].text, 'Almoço sex 16/10: faz → não faz');
+
+// Churrasco: total = participantes + extras
+const s3 = L.applyEvents(L.applyDayNotes(L.summarize(people, '2026-10-17', [], [], {}), [{ date: '2026-10-17', meal: 'almoco', extra: 2, text: 'x' }]),
+  [{ date: '2026-10-17', meal: 'almoco', type: 'churrasco', count: 25, audience: 'estudantes' }]);
+assert.equal(s3.almoco.total, 27);
+assert.equal(s3.almoco.residents, 1); // RL
+assert.equal(s3.almoco.event.count, 25);
+
 console.log('OK — todos os testes passaram');
 export default 'OK';

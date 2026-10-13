@@ -97,6 +97,21 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Churrasco (e outros eventos): o administrador informa participantes e público
+    match /events/{id} {
+      allow read: if hasProfile();
+      allow write: if isAdmin();
+    }
+
+    // Alertas para a cozinha: mudanças feitas depois do horário de aviso
+    match /alerts/{id} {
+      allow read: if isAdmin() || isKitchen();
+      allow create: if hasProfile() && request.resource.data.by == request.auth.uid
+        && request.resource.data.ackAt == null;
+      allow update: if (isKitchen() || isAdmin()) && onlyKeys(['ackAt', 'ackBy']);
+      allow delete: if isAdmin();
+    }
+
     // "Fotografia" diária dos totais, usada nas estatísticas
     match /daily/{date} {
       allow read: if isAdmin() || isKitchen();

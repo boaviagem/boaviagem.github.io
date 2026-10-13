@@ -27,6 +27,16 @@ Para cada pessoa, dia e refeição vale, nesta ordem (o último ganha):
 
 Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar +tarde 21:00.
 
+## Prazo de aviso, alertas e churrasco
+
+- A cozinha é avisada às 8h30: almoço e jantar do dia e café do dia seguinte; na sexta, todo o fim de semana
+  até o café de segunda. Mudanças até **8h15** desse dia (ajustável em Configurações).
+- Depois do prazo, quem muda vê um aviso e a cozinha recebe um **alerta** (coleção `alerts`), com botão “Ciente”.
+  Vale também para mudanças de regra padrão/temporária que atinjam refeições já avisadas.
+- Refeições que já passaram (café após 10h, almoço após 15h, jantar após 22h) ficam bloqueadas para os comensais.
+- No painel, o administrador tem em cada refeição: **+ Pessoas** (+1, +2, +5…), **Churrasco** (participantes e público:
+  estudantes, profissionais ou misto; o total passa a ser o nº de participantes) e **Alterar pessoa…**.
+
 ## Planilha de comensais
 
 Em **Pessoas → Importar planilha** (arquivo .xlsx). Colunas reconhecidas na primeira linha:
@@ -114,4 +124,6 @@ test/                 testes da lógica
 - `dayNotes/{id}` — recados do administrador: `date`, `meal` (vazio = geral), `text`, `extra`
 - `messages/{id}` — `dir` (`k2a` cozinha→admin, `a2k` admin→cozinha), `text`, `from`, `createdAt`, `readAt`
 - `daily/{data}` — totais gravados de cada dia (estatísticas)
+- `events/{data_refeição}` — churrasco: `count`, `audience`, `note`
+- `alerts/{id}` — mudanças depois do prazo: `initials`, `items[]`, `createdAt`, `ackAt`
 - `settings/app` — horários padrão; `settings/bootstrap` — marca do primeiro administrador

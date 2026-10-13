@@ -18,6 +18,8 @@ export function createFirebaseApi(config) {
   const d = (...p) => doc(db, ...p);
   const col = (n) => collection(db, n);
   const rows = (snap) => snap.docs.map((x) => ({ id: x.id, ...x.data() }));
+  // Coleções novas: se as regras publicadas ainda não as conhecem, não derruba a tela
+  const soft = async (fn) => { try { return await fn(); } catch (e) { console.warn('sem acesso (regras desatualizadas?)', e.code); return []; } };
   const one = async (ref) => { const s = await getDoc(ref); return s.exists() ? { id: s.id, ...s.data() } : null; };
 
   // Cria o login sem derrubar a sessão atual. Sem senha: gera uma aleatória e manda
@@ -143,6 +145,18 @@ export function createFirebaseApi(config) {
     sendMessage: (dir, text, uid, email) => addDoc(col('messages'), { dir, text, from: uid, fromEmail: email, createdAt: Date.now(), readAt: null }),
     markRead: (id) => updateDoc(d('messages', id), { readAt: Date.now() }),
     deleteMessage: (id) => deleteDoc(d('messages', id)),
+
+    // Churrasco e outros eventos que substituem a contagem de uma refeição
+    listEvents: (from, to) => soft(async () =>
+      rows(await getDocs(query(col('events'), where('date', '>=', from), where('date', '<=', to))))),
+    setEvent: (e, uid) => setDoc(d('events', `${e.date}_${e.meal}`), { ...e, by: uid, updatedAt: Date.now() }),
+    deleteEvent: (date, meal) => deleteDoc(d('events', `${date}_${meal}`)),
+
+    // Alertas para a cozinha (mudanças depois do horário de aviso)
+    addAlert: (a, uid) => addDoc(col('alerts'), { ...a, by: uid, createdAt: Date.now(), ackAt: null, ackBy: null }),
+    listAlerts: () => soft(async () => rows(await getDocs(query(col('alerts'), orderBy('createdAt', 'desc'), limit(100))))),
+    ackAlert: (id, uid) => updateDoc(d('alerts', id), { ackAt: Date.now(), ackBy: uid }),
+    deleteAlert: (id) => deleteDoc(d('alerts', id)),
 
     listDaily: async (from, to) =>
       rows(await getDocs(query(col('daily'), where('date', '>=', from), where('date', '<=', to)))),

@@ -130,6 +130,18 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .daynote button.link { padding: 0 4px; }
 .err { color: var(--warn); font-weight: 600; }
 
+/* Prazos, alertas e churrasco */
+.mealbtn.past { opacity: .55; }
+.alerts { border-left: 4px solid var(--warn); }
+.alert-item { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; padding: 8px 0;
+  border-top: 1px solid var(--line); }
+.alert-item.acked { opacity: .6; }
+.event { background: var(--warn-soft); color: var(--text); border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+.badge.bbq { background: var(--warn-soft); color: var(--warn); }
+details.residents summary { cursor: pointer; font-size: .85rem; color: var(--muted); margin: 6px 0; }
+.adminbar { margin-top: 10px; gap: 6px; }
+button.small { padding: 4px 10px; font-size: .85rem; }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }

@@ -13,6 +13,7 @@ export const WHEN_LABEL = { N: 'normal', C: '+cedo', T: '+tarde', L: 'p/ levar' 
 export const DEFAULT_SETTINGS = {
   late: { cafe: '', almoco: '14:00', jantar: '21:00' },
   early: { cafe: '', almoco: '', jantar: '' },
+  deadline: '08:15', // horário-limite para mudanças, no dia em que a cozinha é avisada
 };
 
 export function mergeSettings(s) {
@@ -20,6 +21,7 @@ export function mergeSettings(s) {
   return {
     late: { ...DEFAULT_SETTINGS.late, ...(s.late || {}) },
     early: { ...DEFAULT_SETTINGS.early, ...(s.early || {}) },
+    deadline: s.deadline || DEFAULT_SETTINGS.deadline,
   };
 }
 
@@ -318,4 +320,76 @@ export function parseImportRows(rows) {
     return rec;
   });
   return { records, hasRule, hasDiet: col.diet >= 0 };
+}
+
+// ---------- Prazo de aviso à cozinha ----------
+// A cozinha é avisada às 8h30: almoço e jantar do dia + café do dia seguinte. Na sexta, avisa-se
+// todo o fim de semana (até o café de segunda). O prazo para mudanças é settings.deadline (8h15) desse dia.
+export const MEAL_END = { cafe: '10:00', almoco: '15:00', jantar: '22:00' }; // depois disso a refeição "passou"
+export const AUDIENCE = { estudantes: 'estudantes', profissionais: 'profissionais', misto: 'estudantes e profissionais' };
+
+export function announceDate(date, meal) {
+  let d = meal === 'cafe' ? addDays(date, -1) : date;
+  const w = weekday(d);
+  if (w === 6) d = addDays(d, -1);
+  else if (w === 0) d = addDays(d, -2);
+  return d;
+}
+export const nowStamp = (now = new Date()) =>
+  `${ymd(now)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+export const deadlineOf = (date, meal, settings) => `${announceDate(date, meal)} ${mergeSettings(settings).deadline}`;
+
+// 'open' = dá para mudar; 'late' = cozinha já avisada (muda com alerta); 'past' = refeição já passou
+export function mealStatus(date, meal, settings, now = new Date()) {
+  const n = nowStamp(now);
+  if (`${date} ${MEAL_END[meal]}` <= n) return 'past';
+  if (deadlineOf(date, meal, settings) <= n) return 'late';
+  return 'open';
+}
+export function fmtDeadline(date, meal, settings) {
+  const [d, h] = deadlineOf(date, meal, settings).split(' ');
+  return `${h.replace(':', 'h')} de ${fmtDate(d).toLowerCase()}`;
+}
+
+// Refeições já avisadas e ainda por acontecer
+export function announcedMeals(settings, now = new Date()) {
+  const out = [];
+  const t = ymd(now);
+  for (let i = 0; i <= 4; i++) {
+    const d = addDays(t, i);
+    for (const m of MEALS) if (mealStatus(d, m, settings, now) === 'late') out.push({ date: d, meal: m });
+  }
+  return out;
+}
+
+export function describeState(r) {
+  if (!r.on) return 'não faz';
+  const w = r.when === 'N' ? 'faz' : `faz ${WHEN_LABEL[r.when]}${r.timeShown ? ' ' + r.timeShown : ''}`;
+  return w + (r.note ? ` (“${r.note}”)` : '');
+}
+
+// Diferenças, nas refeições já avisadas, entre duas situações de uma pessoa (antes/depois de uma mudança).
+// a e b = { person, periods, ovMap }
+export function lateDiffs(a, b, settings, now = new Date()) {
+  const out = [];
+  for (const { date, meal } of announcedMeals(settings, now)) {
+    const r0 = resolve(a.person, date, meal, a.periods, a.ovMap, settings);
+    const r1 = resolve(b.person, date, meal, b.periods, b.ovMap, settings);
+    const s0 = describeState(r0), s1 = describeState(r1);
+    if (s0 !== s1) out.push({ date, meal, text: `${MEAL_SHORT[meal]} ${fmtDate(date).toLowerCase()}: ${s0} → ${s1}` });
+  }
+  return out;
+}
+
+// ---------- Churrasco (substitui a contagem da refeição) ----------
+// event = { date, meal, type: 'churrasco', count, audience: 'estudantes' | 'profissionais' | 'misto', note }
+export function applyEvents(summary, events) {
+  for (const e of events || []) {
+    const s = summary[e.meal];
+    if (!s) continue;
+    s.event = e;
+    s.residents = s.total - (s.extras || 0);
+    s.total = Math.max(0, Number(e.count) || 0) + (s.extras || 0);
+  }
+  return summary;
 }

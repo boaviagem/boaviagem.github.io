@@ -51,7 +51,8 @@ function seed() {
     daily[d] = { date: d, meals: Object.fromEntries(L.MEALS.map((m, k) => [m,
       { total: r(k), diet: 3 + (i % 2), early: (i + k) % 3 === 0 ? 1 : 0, late: k === 2 ? 1 : 0, takeaway: 0, extras: 0 }])) };
   }
-  return { users, people, names, overrides, periods, dayNotes, messages, daily, settings: { app: L.mergeSettings({}) }, bootstrap: true };
+  const events = {}, alerts = {};
+  return { users, people, names, overrides, periods, dayNotes, messages, daily, events, alerts, settings: { app: L.mergeSettings({}) }, bootstrap: true };
 }
 
 export function createDemoApi() {
@@ -151,6 +152,13 @@ export function createDemoApi() {
     async markRead(id) { st.messages[id].readAt = Date.now(); save(); },
     async deleteMessage(id) { delete st.messages[id]; save(); },
 
+    listEvents: async (from, to) => later(list(st.events ||= {}).filter((x) => x.date >= from && x.date <= to)),
+    async setEvent(e, by) { (st.events ||= {})[`${e.date}_${e.meal}`] = { ...e, by, updatedAt: Date.now() }; save(); },
+    async deleteEvent(date, meal) { delete (st.events ||= {})[`${date}_${meal}`]; save(); },
+    async addAlert(a, by) { (st.alerts ||= {})[uid()] = { ...structuredClone(a), by, createdAt: Date.now(), ackAt: null, ackBy: null }; save(); },
+    listAlerts: async () => later(list(st.alerts ||= {}).sort((a, b) => b.createdAt - a.createdAt)),
+    async ackAlert(id, by) { Object.assign(st.alerts[id], { ackAt: Date.now(), ackBy: by }); save(); },
+    async deleteAlert(id) { delete st.alerts[id]; save(); },
     listDaily: async (from, to) => later(list(st.daily).filter((x) => x.date >= from && x.date <= to)),
     async saveDaily(date, meals) { st.daily[date] = { date, meals, at: Date.now() }; save(); },
   };
