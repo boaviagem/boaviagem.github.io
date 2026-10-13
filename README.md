@@ -75,6 +75,14 @@ O plano gratuito (Spark) não pede cartão e sobra para este uso.
 7. Importe a planilha (Pessoas → Importar planilha) ou cadastre um a um, e crie a **conta da administradora da cozinha**.
    Ela mesma cria as contas das auxiliares em **Equipe**.
 
+### Chave da API (alerta do GitHub)
+
+A `apiKey` em `js/firebase-config.js` é a chave **pública** da configuração Web do Firebase: todo navegador que abre
+o site a recebe, então tirá-la do repositório não a esconderia. Quem protege os dados são as regras do Firestore.
+Para limitar o uso, ela foi restrita no Google Cloud Console (APIs e serviços → Credenciais → Browser key):
+referenciadores `https://boaviagem.github.io/*`, `https://ccbv-comensais.firebaseapp.com/*`, `http://localhost:*/*`
+e APIs Identity Toolkit, Token Service e Cloud Firestore. O alerta de "secret scanning" pode ser fechado como falso positivo.
+
 ### Observações
 
 - Excluir um comensal no app apaga os dados e o acesso dele; o login em si (e-mail/senha) só some de vez no
