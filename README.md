@@ -8,7 +8,7 @@ Roda como site estático no GitHub Pages (`https://boaviagem.github.io`) e usa o
 
 | Perfil | O que faz |
 |---|---|
-| **Administrador** (pode haver vários) | Cria, modifica, desativa e exclui comensais e convidados (iniciais, nome, regime, regra padrão); importa a planilha; cria logins; vê o painel com nomes; altera as refeições e regras de qualquer pessoa; deixa recados do dia para a cozinha (com “+N pessoas” numa refeição); troca mensagens com a administradora da cozinha; vê estatísticas; define horários padrão. |
+| **Administrador** (pode haver vários) | No painel, toca numa pessoa para tirá-la da refeição, mudar o horário ou deixar observação (ou inclui outra pessoa). Cria, modifica, desativa e exclui comensais e convidados (iniciais, nome, regime, regra padrão); importa a planilha; cria logins; vê o painel com nomes; altera as refeições e regras de qualquer pessoa; deixa recados do dia para a cozinha (com “+N pessoas” numa refeição); troca mensagens com a administradora da cozinha; vê estatísticas; define horários padrão. |
 | **Comensal** | Vê as próximas refeições; desmarca/marca uma refeição pontual; escolhe +cedo / +tarde / para levar (com horário opcional); deixa observação (ex.: “jantar +leve”); altera a própria regra padrão; cria regras temporárias (ex.: viagem). |
 | **Administradora da cozinha** | Painel do dia e da semana (totais, +cedo/+tarde com horário, para levar, regimes que não fazem a refeição, observações, recados) — **somente iniciais**; estatísticas; mensagens para o administrador; cria e remove contas de auxiliares. |
 | **Auxiliar de cozinha** | Mesma visão da administradora da cozinha, sem criar contas nem enviar mensagens. |
@@ -21,7 +21,8 @@ A cozinha não tem acesso aos nomes: eles ficam na coleção `names`, que as reg
 Para cada pessoa, dia e refeição vale, nesta ordem (o último ganha):
 
 1. **Regra padrão** — grade semanal (7 dias × 3 refeições). Cada célula: não faz, ✓ normal, +cedo, +tarde ou para levar, com horário opcional.
-2. **Regra temporária** — período com outra grade (ou “ausente”, para viagens). Se houver mais de uma no mesmo dia, vale a criada por último.
+2. **Regra temporária** — período com outra grade (ou “ausente”, para viagens), ou uma **repetição mensal**
+   (ex.: “1º domingo de cada mês, de sábado a domingo”). Se houver mais de uma no mesmo dia, vale a criada por último.
 3. **Alteração pontual** — um dia e uma refeição específicos (vou / não vou, horário, observação).
 
 Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar +tarde 21:00.

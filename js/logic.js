@@ -95,11 +95,43 @@ export function overrideMap(overrides) {
   return m;
 }
 
+// ---------- Repetição mensal ----------
+// period.repeat = { nth: 1..4 | -1 (último), dow: 0..6, start: -k (dias antes), end: k (dias depois) }
+// Ex.: MB — fim de semana do 1º domingo, sábado a domingo: { nth: 1, dow: 0, start: -1, end: 0 }
+export const NO_END = '9999-12-31';
+export const NTH_LABEL = { 1: '1º', 2: '2º', 3: '3º', 4: '4º', '-1': 'último' };
+
+function isNthWeekday(date, nth) {
+  const d = parseYmd(date);
+  const day = d.getDate();
+  if (nth === -1) return day + 7 > new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return Math.ceil(day / 7) === nth;
+}
+
+export function occursOn(p, date) {
+  if (p.from > date || (p.to || NO_END) < date) return false;
+  const r = p.repeat;
+  if (!r) return true;
+  for (let off = r.start || 0; off <= (r.end || 0); off++) {
+    const anchor = addDays(date, -off);
+    if (weekday(anchor) === r.dow && isNthWeekday(anchor, Number(r.nth))) return true;
+  }
+  return false;
+}
+
+export function describeRepeat(r) {
+  if (!r) return '';
+  const base = `${NTH_LABEL[r.nth]} ${DOW_LONG[r.dow].toLowerCase()} de cada mês`;
+  if (!r.start && !r.end) return base;
+  const a = DOW_LONG[(r.dow + (r.start || 0) + 7) % 7].toLowerCase(), b = DOW_LONG[(r.dow + (r.end || 0) + 7) % 7].toLowerCase();
+  return `${base} (de ${a} a ${b})`;
+}
+
 // Regra temporária vigente: a criada por último entre as que cobrem a data.
 export function activePeriod(periods, personId, date) {
   let best = null;
   for (const p of periods || []) {
-    if (p.personId !== personId || p.from > date || p.to < date) continue;
+    if (p.personId !== personId || !occursOn(p, date)) continue;
     if (!best || (p.createdAt || 0) > (best.createdAt || 0)) best = p;
   }
   return best;

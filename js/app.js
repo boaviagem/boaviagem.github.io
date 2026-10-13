@@ -60,10 +60,11 @@ function openDialog(html, bind) {
   bind?.($('#dlg-body'));
 }
 
-function chip(item, cls = '', extra = '') {
+function chip(item, cls = '', extra = '', meal = '') {
   const name = isAdmin() ? fullName(item.id) : '';
   const label = esc(item.initials) + (S.showNames && name ? ` <span class="t">${esc(name)}</span>` : '');
-  return `<span class="chip ${cls} ${item.diet ? 'diet' : ''} ${item.guest ? 'guest' : ''}" title="${esc(name)}${item.diet ? ' (regime)' : ''}">${label}${extra ? ` <span class="t">${esc(extra)}</span>` : ''}</span>`;
+  const edit = meal && isAdmin() ? ` data-pid="${item.id}" data-meal="${meal}" role="button" tabindex="0"` : '';
+  return `<span class="chip ${cls} ${item.diet ? 'diet' : ''} ${item.guest ? 'guest' : ''} ${edit ? 'editable' : ''}"${edit} title="${esc(name)}${item.diet ? ' (regime)' : ''}${edit ? ' — tocar para alterar' : ''}">${label}${extra ? ` <span class="t">${esc(extra)}</span>` : ''}</span>`;
 }
 
 // ---------- Sessão ----------
@@ -226,7 +227,7 @@ function renderNoProfile() {
 
 // ---------- Painel (admin e cozinha) ----------
 function mealCard(meal, s) {
-  const chips = (arr, cls, timeFn) => `<div class="chips">${arr.map((i) => chip(i, cls, timeFn?.(i))).join('')}</div>`;
+  const chips = (arr, cls, timeFn) => `<div class="chips">${arr.map((i) => chip(i, cls, timeFn?.(i), meal)).join('')}</div>`;
   const parts = [];
   parts.push(`<div class="meal-head"><h3>${L.MEAL_LABEL[meal]}</h3><span class="total">${s.total}</span></div>`);
   const resumo = [`${s.diet} de regime`];
@@ -250,6 +251,7 @@ function mealCard(meal, s) {
     parts.push(`<div class="sub">Recados do administrador</div><ul class="notes">${s.dayNotes.map(dayNoteItem).join('')}</ul>`);
   }
   if (!s.total && !s.dietAbsent.length && !s.notes.length) parts.push('<p class="muted">Ninguém.</p>');
+  if (isAdmin()) parts.push(`<div class="row" style="margin-top:10px"><button class="link small" data-other="${meal}">Alterar outra pessoa…</button></div>`);
   return `<section class="card">${parts.join('')}</section>`;
 }
 
@@ -263,7 +265,7 @@ async function daySummary(date) {
   const [ovs, pers, notes] = await Promise.all([api.listOverridesRange(date, date), api.listPeriodsFrom(date), api.listDayNotes(date, date)]);
   const sum = L.applyDayNotes(L.summarize(S.people, date, pers, ovs, S.settings), notes);
   saveSnapshot(date, sum);
-  return { sum, notes };
+  return { sum, notes, ovs, pers };
 }
 async function saveSnapshot(date, sum) {
   const t = L.today();
@@ -306,7 +308,7 @@ function bindDayNoteDeletes() {
 
 async function viewPainel() {
   const date = S.dashDate;
-  const { sum, notes } = await daySummary(date);
+  const { sum, notes, ovs, pers } = await daySummary(date);
   const general = notes.filter((n) => !n.meal);
   main.innerHTML = `
     <div class="card row spread">
@@ -324,6 +326,7 @@ async function viewPainel() {
     ${general.length ? `<div class="card recado"><div class="sub" style="margin-top:0">Recados do administrador</div>
       <ul class="notes">${general.map(dayNoteItem).join('')}</ul></div>` : ''}
     <div class="grid3">${L.MEALS.map((m) => mealCard(m, sum[m])).join('')}</div>
+    ${isAdmin() ? '<p class="muted small">Toque numa pessoa para tirá-la da refeição, mudar o horário ou deixar observação.</p>' : ''}
     <p class="muted small" style="margin-top:12px"><span class="chip diet">XX</span> = regime ·
       <span class="chip absent">XX</span> = regime que não faz a refeição</p>`;
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => {
@@ -333,6 +336,28 @@ async function viewPainel() {
   $('#dash-date').addEventListener('change', (e) => { if (e.target.value) { S.dashDate = e.target.value; route(); } });
   $('#b-reload').addEventListener('click', () => route());
   $('#b-note')?.addEventListener('click', () => addDayNoteDialog(date));
+  if (isAdmin()) {
+    const ovMap = L.overrideMap(ovs);
+    const open = (pid, meal) => { const p = personById(pid); if (p) editMeal(p, date, meal, pers, ovMap); };
+    $$('.chip[data-pid]').forEach((c) => {
+      c.addEventListener('click', () => open(c.dataset.pid, c.dataset.meal));
+      c.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(c.dataset.pid, c.dataset.meal); });
+    });
+    $$('[data-other]').forEach((b) => b.addEventListener('click', () => {
+      const meal = b.dataset.other;
+      const opts = S.people.filter((p) => p.active !== false).map((p) => {
+        const r = L.resolve(p, date, meal, pers, ovMap, S.settings);
+        return `<option value="${p.id}">${esc(p.initials)} — ${esc(fullName(p.id))} (${r.on ? 'faz' : 'não faz'})</option>`;
+      }).join('');
+      openDialog(`<form id="f-other" class="stack"><h3>${L.MEAL_LABEL[meal]} — ${L.fmtDate(date, true)}</h3>
+          <label>Pessoa <select name="pid">${opts}</select></label>
+          <div class="row spread"><span></span><span class="row"><button type="button" data-close>Cancelar</button>
+          <button class="primary" type="submit">Continuar</button></span></div></form>`, (root) => {
+        const f = $('#f-other', root);
+        f.addEventListener('submit', (e) => { e.preventDefault(); open(f.pid.value, meal); });
+      });
+    }));
+  }
   bindDayNoteDeletes();
   $('#ck-names')?.addEventListener('change', (e) => { S.showNames = e.target.checked; route(); });
 }
@@ -430,7 +455,7 @@ function editMeal(person, date, meal, pers, ovMap) {
   const radio = (name, val, label, checked) =>
     `<label><input type="radio" name="${name}" value="${val}" ${checked ? 'checked' : ''}> ${label}</label>`;
   openDialog(`<form id="f-meal" class="stack">
-      <h3>${L.MEAL_LABEL[meal]} — ${L.fmtDate(date, true)}</h3>
+      <h3>${isAdmin() ? esc(person.initials) + ' · ' : ''}${L.MEAL_LABEL[meal]} — ${L.fmtDate(date, true)}</h3>
       <p class="muted small">Padrão: ${base.on ? 'faz' + (base.when !== 'N' ? ` (${L.WHEN_LABEL[base.when]} ${base.timeShown})` : '') : 'não faz'}${base.source === 'temporária' ? ' (regra temporária)' : ''}.</p>
       <div class="seg">${radio('on', '1', 'Vou', cur.on)}${radio('on', '0', 'Não vou', !cur.on)}</div>
       <fieldset id="whenbox"><legend>Horário</legend>
@@ -545,18 +570,36 @@ async function viewTemporarias() {
   const pers = (await api.listPeriodsByPerson(person.id)).sort((a, b) => b.from.localeCompare(a.from));
   const t = L.today();
   const isAbsent = (g) => L.MEALS.every((m) => [0, 1, 2, 3, 4, 5, 6].every((d) => !g?.[d]?.[m]));
+  const when = (p) => p.repeat
+    ? `${L.describeRepeat(p.repeat)} · desde ${L.fmtDate(p.from)}${p.to && p.to !== L.NO_END ? ` até ${L.fmtDate(p.to)}` : ''}`
+    : `${L.fmtDate(p.from)} a ${L.fmtDate(p.to)}`;
   const items = pers.map((p) => `<div class="list-item ${p.to < t ? 'inactive' : ''}">
-      <div><strong>${esc(p.label || (isAbsent(p.grid) ? 'Ausência' : 'Regra temporária'))}</strong><br>
-        <span class="small muted">${L.fmtDate(p.from)} a ${L.fmtDate(p.to)} · ${isAbsent(p.grid) ? 'não faz refeições' : 'regra personalizada'}${p.to < t ? ' · encerrada' : ''}</span></div>
+      <div><strong>${esc(p.label || (p.repeat ? 'Repetição mensal' : isAbsent(p.grid) ? 'Ausência' : 'Regra temporária'))}</strong>
+        ${p.repeat ? '<span class="badge plus">todo mês</span>' : ''}<br>
+        <span class="small muted">${esc(when(p))} · ${isAbsent(p.grid) ? 'não faz refeições' : 'regra personalizada'}${p.to < t ? ' · encerrada' : ''}</span></div>
       <button class="danger" data-del="${p.id}">Excluir</button></div>`).join('');
+  const sel = (name, opts, cur) => `<select name="${name}">${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const offs = (sign) => [0, 1, 2, 3, 4, 5, 6].map((n) => [sign * n, n === 0 ? 'no próprio dia' : `${n} dia${n > 1 ? 's' : ''} ${sign < 0 ? 'antes' : 'depois'}`]);
   main.innerHTML = `${targetSelector()}
     <div class="card"><h2>Regras temporárias${isAdmin() ? ' — ' + esc(person.initials) : ''}</h2>
       ${items || '<p class="muted">Nenhuma.</p>'}</div>
     <form class="card stack" id="f-per">
       <h2>Nova regra temporária</h2>
       <label>Motivo <input name="label" placeholder="ex.: viagem" maxlength="60"></label>
-      <div class="row"><label>De <input type="date" name="from" value="${t}" required></label>
-        <label>Até (inclusive) <input type="date" name="to" value="${t}" required></label></div>
+      <div class="seg"><label><input type="radio" name="freq" value="once" checked> Um período</label>
+        <label><input type="radio" name="freq" value="monthly"> Repetir todo mês</label></div>
+      <fieldset id="repbox" hidden><legend>Repetição</legend>
+        <div class="row">
+          <label>No ${sel('nth', [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º'], [-1, 'último']], 1)}</label>
+          <label>dia ${sel('dow', L.DOW_LONG.map((d, i) => [i, d.toLowerCase()]), 0)}</label>
+          <label>de cada mês</label></div>
+        <div class="row" style="margin-top:8px">
+          <label>Começa ${sel('rstart', offs(-1), 0)}</label>
+          <label>Termina ${sel('rend', offs(1), 0)}</label></div>
+        <p class="muted small" id="repdesc"></p>
+      </fieldset>
+      <div class="row"><label><span id="lbl-from">De</span> <input type="date" name="from" value="${t}" required></label>
+        <label><span id="lbl-to">Até (inclusive)</span> <input type="date" name="to" value="${t}"></label></div>
       <div class="seg"><label><input type="radio" name="kind" value="aus" checked> Ausente (nenhuma refeição)</label>
         <label><input type="radio" name="kind" value="custom"> Regra personalizada</label></div>
       <div id="per-grid" hidden>${gridEditor(person.defaultRule)}</div>
@@ -566,14 +609,31 @@ async function viewTemporarias() {
   bindTargetSelector();
   const f = $('#f-per'), gbox = $('#per-grid');
   bindGrid(gbox);
-  f.addEventListener('change', () => { gbox.hidden = f.kind.value !== 'custom'; });
+  const repeatOf = () => ({ nth: Number(f.nth.value), dow: Number(f.dow.value), start: Number(f.rstart.value), end: Number(f.rend.value) });
+  const sync = () => {
+    gbox.hidden = f.kind.value !== 'custom';
+    const monthly = f.freq.value === 'monthly';
+    $('#repbox').hidden = !monthly;
+    $('#lbl-from').textContent = monthly ? 'Valendo a partir de' : 'De';
+    $('#lbl-to').textContent = monthly ? 'Até (opcional)' : 'Até (inclusive)';
+    if (monthly) $('#repdesc').textContent = 'Ex.: ' + L.describeRepeat(repeatOf()) + '.';
+  };
+  f.addEventListener('change', (e) => {
+    if (e.target.name === 'freq') f.to.value = f.freq.value === 'monthly' ? '' : f.from.value;
+    sync();
+  });
+  sync();
   f.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (f.to.value < f.from.value) return toast('A data final é anterior à inicial.');
+    const monthly = f.freq.value === 'monthly';
+    const to = monthly ? f.to.value || L.NO_END : f.to.value;
+    if (!to) return toast('Informe a data final.');
+    if (to < f.from.value) return toast('A data final é anterior à inicial.');
     guard(async () => {
       await api.addPeriod({
-        personId: person.id, from: f.from.value, to: f.to.value, label: f.label.value.trim(),
+        personId: person.id, from: f.from.value, to, label: f.label.value.trim(),
         grid: f.kind.value === 'custom' ? readGrid(gbox) : L.emptyGrid(),
+        ...(monthly ? { repeat: repeatOf() } : {}),
       });
       toast('Regra temporária criada.'); route();
     }, f.querySelector('[type=submit]'));

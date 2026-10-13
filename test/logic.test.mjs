@@ -91,5 +91,22 @@ const old = L.parseImportRows([['LK', 'lk@x.org', 'Nome LK']]);
 assert.equal(old.records[0].fullName, 'Nome LK');
 assert.equal(old.hasRule, false);
 
+// Repetição mensal: fim de semana do 1º domingo (sábado jantar → domingo almoço)
+const mbGrid = L.emptyGrid(); mbGrid[6].jantar = 'N'; mbGrid[0].cafe = 'N'; mbGrid[0].almoco = 'N';
+const mb = { id: 'mb', initials: 'MB', defaultRule: L.emptyGrid() };
+const rep = { personId: 'mb', from: '2026-10-12', to: L.NO_END, grid: mbGrid, createdAt: 1, repeat: { nth: 1, dow: 0, start: -1, end: 0 } };
+const on = (d, m) => L.resolve(mb, d, m, [rep], null, {}).on;
+assert.equal(on('2026-10-31', 'jantar'), true);   // sábado antes do 1º domingo de novembro
+assert.equal(on('2026-11-01', 'almoco'), true);
+assert.equal(on('2026-11-01', 'jantar'), false);
+assert.equal(on('2026-11-07', 'jantar'), false);  // sábado seguinte: 2º domingo não conta
+assert.equal(on('2027-08-01', 'almoco'), true);   // 1º domingo de agosto/2027
+assert.equal(on('2027-07-31', 'jantar'), true);   // sábado em julho, véspera
+assert.equal(on('2026-10-03', 'jantar'), false);  // antes do início
+const last = { ...rep, repeat: { nth: -1, dow: 5, start: 0, end: 0 } }; // última sexta
+assert.equal(L.occursOn(last, '2026-10-30'), true);
+assert.equal(L.occursOn(last, '2026-10-23'), false);
+assert.equal(L.describeRepeat(rep.repeat), '1º domingo de cada mês (de sábado a domingo)');
+
 console.log('OK — todos os testes passaram');
 export default 'OK';

@@ -69,6 +69,8 @@ legend { font-size: .9rem; color: var(--muted); padding: 0 4px; }
 .chip.guest::after { content: "convid."; font-weight: 400; font-size: .7rem; opacity: .8; }
 .chip .t { font-weight: 400; font-size: .82rem; }
 .chip.early, .chip.late, .chip.take { background: var(--info-soft); color: var(--info); }
+.chip.editable { cursor: pointer; }
+.chip.editable:hover, .chip.editable:focus-visible { filter: brightness(.93); outline: 2px solid var(--accent); }
 .chip.absent { background: var(--warn-soft); color: var(--warn); outline: 1px solid var(--warn); }
 .alert { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 6px 10px; font-weight: 600; }
 .notes { margin: 0; padding-left: 18px; }
