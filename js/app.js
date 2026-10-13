@@ -91,6 +91,7 @@ async function loadSession() {
   if (!S.targetPid || !personById(S.targetPid)) S.targetPid = S.myPid || S.people[0]?.id || null;
   renderNav();
   refreshUnread();
+  if (isAdmin()) api.migrateNotes().then((n) => n && console.info(`${n} observação(ões) movidas`)).catch((e) => console.warn('migrateNotes', e));
   return true;
 }
 
@@ -250,8 +251,11 @@ function mealCard(meal, s, date) {
   if (s.late.length) parts.push(`<div class="sub">Mais tarde</div>${chips(s.late, 'late', (i) => i.timeShown || '+tarde')}`);
   if (s.takeaway.length) parts.push(`<div class="sub">Para levar</div>${chips(s.takeaway, 'take', (i) => i.timeShown)}`);
   if (s.notes.length) {
+    const ctl = (i) => !isAdmin() || !i.noteId ? ''
+      : i.noteApproved ? ` <span class="badge plus">cozinha vê</span> <button class="link small" data-approve="${i.noteId}" data-v="0">ocultar</button>`
+      : ` <span class="badge">só você vê</span> <button class="link small" data-approve="${i.noteId}" data-v="1">liberar para a cozinha</button>`;
     parts.push(`<div class="sub">Observações</div><ul class="notes">${s.notes.map((i) =>
-      `<li><strong>${esc(i.initials)}</strong>${i.diet ? ' <span class="badge">R</span>' : ''}${i.on ? '' : ' <span class="muted">(não vem)</span>'}: ${esc(i.note)}</li>`).join('')}</ul>`);
+      `<li><strong>${esc(i.initials)}</strong>${i.diet ? ' <span class="badge">R</span>' : ''}${i.on ? '' : ' <span class="muted">(não vem)</span>'}: ${esc(i.note)}${ctl(i)}</li>`).join('')}</ul>`);
   }
   if (s.dayNotes?.length) {
     parts.push(`<div class="sub">Recados do administrador</div><ul class="notes">${s.dayNotes.map(dayNoteItem).join('')}</ul>`);
@@ -262,7 +266,7 @@ function mealCard(meal, s, date) {
   if (st === 'late') parts.push(`<p class="small muted" style="margin-top:8px">🔔 Cozinha avisada (prazo: ${L.fmtDeadline(date, meal, S.settings)})</p>`);
   if (isAdmin()) {
     parts.push(`<div class="row adminbar"><button class="small" data-plus="${meal}">+ Pessoas</button>
-      <button class="small" data-bbq="${meal}">🔥 Churrasco</button>
+      ${L.isBbqMeal(date, meal) || ev ? `<button class="small" data-bbq="${meal}">🔥 Churrasco</button>` : ''}
       <button class="small" data-other="${meal}">Alterar pessoa…</button></div>`);
   }
   return `<section class="card">${parts.join('')}</section>`;
@@ -275,8 +279,9 @@ function dayNoteItem(n) {
 
 // Totais de um dia (com recados) — também grava a "fotografia" do dia para as estatísticas.
 async function daySummary(date) {
-  const [ovs, pers, notes, events] = await Promise.all([api.listOverridesRange(date, date), api.listPeriodsFrom(date),
-    api.listDayNotes(date, date), api.listEvents(date, date)]);
+  const [ovs0, pers, notes, events, cnotes] = await Promise.all([api.listOverridesRange(date, date), api.listPeriodsFrom(date),
+    api.listDayNotes(date, date), api.listEvents(date, date), api.listNotes(date, date, !isAdmin())]);
+  const ovs = L.mergeNotes(ovs0, cnotes);
   const sum = L.applyEvents(L.applyDayNotes(L.summarize(S.people, date, pers, ovs, S.settings), notes), events);
   saveSnapshot(date, sum);
   return { sum, notes, ovs, pers, events };
@@ -452,6 +457,10 @@ async function viewPainel() {
   $('#b-reload').addEventListener('click', () => route());
   $('#b-note')?.addEventListener('click', () => addDayNoteDialog(date));
   bindAlerts(alerts);
+  $$('[data-approve]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    await api.approveNote(b.dataset.approve, b.dataset.v === '1');
+    toast(b.dataset.v === '1' ? 'Observação liberada para a cozinha.' : 'Observação ocultada da cozinha.'); route();
+  }, b)));
   $$('[data-plus]').forEach((b) => b.addEventListener('click', () => plusPeopleDialog(date, b.dataset.plus)));
   $$('[data-bbq]').forEach((b) => b.addEventListener('click', () => bbqDialog(date, b.dataset.bbq, events.find((e) => e.meal === b.dataset.bbq))));
   if (isAdmin()) {
@@ -483,8 +492,9 @@ async function viewPainel() {
 // ---------- Semana ----------
 async function viewSemana() {
   const from = S.dashDate, to = L.addDays(from, 6);
-  const [ovs, pers, notes, events] = await Promise.all([api.listOverridesRange(from, to), api.listPeriodsFrom(from),
-    api.listDayNotes(from, to), api.listEvents(from, to)]);
+  const [ovs0, pers, notes, events, cnotes] = await Promise.all([api.listOverridesRange(from, to), api.listPeriodsFrom(from),
+    api.listDayNotes(from, to), api.listEvents(from, to), api.listNotes(from, to, !isAdmin())]);
+  const ovs = L.mergeNotes(ovs0, cnotes);
   const rows = [];
   for (let i = 0; i < 7; i++) {
     const d = L.addDays(from, i);
@@ -542,15 +552,16 @@ async function viewMinhas() {
   const person = personById(S.targetPid);
   if (!person) return noPerson();
   const t = L.today();
-  const [ovs, pers, events] = await Promise.all([api.listOverridesByPerson(person.id), api.listPeriodsByPerson(person.id),
-    api.listEvents(t, L.addDays(t, S.daysAhead))]);
-  const ovMap = L.overrideMap(ovs);
+  const [ovs0, pers, events, cnotes] = await Promise.all([api.listOverridesByPerson(person.id), api.listPeriodsByPerson(person.id),
+    api.listEvents(t, L.addDays(t, S.daysAhead)), api.listNotesByPerson(person.id)]);
+  const ovMap = L.overrideMap(L.mergeNotes(ovs0, cnotes));
   const days = [];
   for (let i = 0; i < S.daysAhead; i++) {
     const d = L.addDays(t, i);
     const meals = L.MEALS.map((m) => {
       const r = L.resolve(person, d, m, pers, ovMap, S.settings);
-      const extra = [r.on && r.when !== 'N' ? `${L.WHEN_LABEL[r.when]}${r.timeShown ? ' ' + r.timeShown : ''}` : '', r.note].filter(Boolean).join(' · ');
+      const extra = [r.on && r.when !== 'N' ? `${L.WHEN_LABEL[r.when]}${r.timeShown ? ' ' + r.timeShown : ''}` : '',
+        r.note ? `${r.note}${r.noteApproved ? '' : ' 🔒'}` : ''].filter(Boolean).join(' · ');
       const src0 = r.source === 'pontual' ? 'alterado' : r.source === 'temporária' ? `temporária${r.periodLabel ? ': ' + r.periodLabel : ''}` : 'padrão';
       const st = L.mealStatus(d, m, S.settings);
       const src = st === 'past' ? '🔒 passou' : st === 'late' ? `🔔 avisado · ${src0}` : src0;
@@ -613,9 +624,11 @@ function editMeal(person, date, meal, pers, ovMap) {
           <input type="time" name="time" value="${esc(cur.time)}"></label>
       </fieldset>
       <label>Observação <input name="note" maxlength="140" value="${esc(cur.note)}" placeholder="ex.: jantar +leve"></label>
+      ${isAdmin() ? `<label class="check"><input type="checkbox" name="share" ${cur.noteId ? (cur.noteApproved ? 'checked' : '') : 'checked'}> observação visível para a cozinha</label>`
+        : '<p class="muted small">🔒 A observação vai para o administrador; a cozinha só a vê se ele liberar.</p>'}
       <div class="row small">${['+leve', 'lanche para levar', 'guardar um prato'].map((n) => `<button type="button" class="link" data-note="${n}">${n}</button>`).join('')}</div>
       <div class="row spread">
-        ${cur.source === 'pontual' ? '<button type="button" id="b-reset">Voltar ao padrão</button>' : '<span></span>'}
+        ${cur.source === 'pontual' || cur.noteId ? '<button type="button" id="b-reset">Voltar ao padrão</button>' : '<span></span>'}
         <span class="row"><button type="button" data-close>Cancelar</button><button class="primary" type="submit">Salvar</button></span>
       </div></form>`, (root) => {
     const f = $('#f-meal', root);
@@ -633,6 +646,7 @@ function editMeal(person, date, meal, pers, ovMap) {
     }));
     $('#b-reset', root)?.addEventListener('click', (e) => guard(async () => {
       await api.deleteOverride(person.id, date, meal);
+      if (cur.noteId) await api.deleteNote(person.id, date, meal);
       const alerted = await afterSave(null);
       dlg.close(); toast(alerted ? 'Voltou ao padrão — a cozinha foi alertada.' : 'Voltou ao padrão.'); route();
     }, e.target));
@@ -642,11 +656,16 @@ function editMeal(person, date, meal, pers, ovMap) {
       const when = on ? f.when.value || 'N' : 'N';
       const time = on && when !== 'N' ? f.time.value : '';
       const note = f.note.value.trim();
-      const same = on === base.on && (!on || (when === base.when && time === base.time)) && !note;
+      const same = on === base.on && (!on || (when === base.when && time === base.time));
+      const share = isAdmin() ? f.share.checked : false;
       guard(async () => {
-        const ov = { personId: person.id, date, meal, status: on ? 'on' : 'off', when, time, note };
-        if (same) await api.deleteOverride(person.id, date, meal);
+        const ov = { personId: person.id, date, meal, status: on ? 'on' : 'off', when, time };
+        if (same) { if (cur.source === 'pontual') await api.deleteOverride(person.id, date, meal); }
         else await api.setOverride(ov, S.user.uid);
+        if (!note) { if (cur.noteId) await api.deleteNote(person.id, date, meal); }
+        else if (note !== cur.note || (isAdmin() && share !== cur.noteApproved)) {
+          await api.setNote({ personId: person.id, date, meal, text: note, approved: share }, S.user.uid);
+        }
         const alerted = await afterSave(same ? null : ov);
         dlg.close(); toast(alerted ? 'Salvo — a cozinha foi alertada da mudança.' : 'Salvo.'); route();
       }, f.querySelector('[type=submit]'));

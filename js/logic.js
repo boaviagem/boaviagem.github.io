@@ -158,11 +158,15 @@ export function resolve(person, date, meal, periods, ovMap, settings) {
   };
   const ov = ovMap && ovMap.get(ovKey(person.id, date, meal));
   if (ov) {
-    r.on = ov.status === 'on';
-    r.when = ov.when || 'N';
-    r.time = ov.time || '';
+    if (ov.status) { // entrada só com observação (sem status) mantém a regra
+      r.on = ov.status === 'on';
+      r.when = ov.when || 'N';
+      r.time = ov.time || '';
+      r.source = 'pontual';
+    }
     r.note = ov.note || '';
-    r.source = 'pontual';
+    r.noteId = ov.noteId || null;
+    r.noteApproved = !!ov.noteApproved;
   }
   if (!r.on) { r.when = 'N'; r.time = ''; }
   r.timeShown = r.when === 'C' ? r.time || settings.early[meal] || ''
@@ -370,10 +374,10 @@ export function announcedMeals(settings, now = new Date()) {
   return out;
 }
 
+// Estado de uma refeição em texto (sem a observação, que pode ser privada do administrador)
 export function describeState(r) {
   if (!r.on) return 'não faz';
-  const w = r.when === 'N' ? 'faz' : `faz ${WHEN_LABEL[r.when]}${r.timeShown ? ' ' + r.timeShown : ''}`;
-  return w + (r.note ? ` (“${r.note}”)` : '');
+  return r.when === 'N' ? 'faz' : `faz ${WHEN_LABEL[r.when]}${r.timeShown ? ' ' + r.timeShown : ''}`;
 }
 
 // Diferenças, nas refeições já avisadas, entre duas situações de uma pessoa (antes/depois de uma mudança).
@@ -409,3 +413,16 @@ export function describePeriod(p) {
   const b = fmtDate(p.to).toLowerCase() + (p.toMeal && p.toMeal !== 'jantar' ? ` (${MEAL_SHORT[p.toMeal].toLowerCase()})` : '');
   return p.from === p.to && !p.fromMeal && !p.toMeal ? a : `${a} a ${b}`;
 }
+
+// ---------- Observações dos comensais (coleção à parte; a cozinha só lê as liberadas) ----------
+// note = { id, personId, date, meal, text, approved }
+export function mergeNotes(overrides, notes) {
+  const m = new Map((overrides || []).map((o) => [ovKey(o.personId, o.date, o.meal), { ...o, note: '' }]));
+  for (const n of notes || []) {
+    const k = ovKey(n.personId, n.date, n.meal);
+    m.set(k, { ...(m.get(k) || { personId: n.personId, date: n.date, meal: n.meal }), note: n.text, noteId: n.id, noteApproved: !!n.approved });
+  }
+  return [...m.values()];
+}
+
+export const isBbqMeal = (date, meal) => meal === 'almoco' && [0, 6].includes(weekday(date));

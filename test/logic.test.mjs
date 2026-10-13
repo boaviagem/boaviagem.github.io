@@ -34,10 +34,10 @@ assert.equal(r(rl, '2026-10-15', 'almoco', [viagem, volta]).on, true);
 // Pontual: mais cedo com horário, observação, desmarcar
 const ov = [
   { personId: 'rl', date: '2026-10-12', meal: 'almoco', status: 'on', when: 'C', time: '12:00', note: '' },
-  { personId: 'gn', date: '2026-10-12', meal: 'jantar', status: 'on', when: 'N', note: '+leve' },
+  { personId: 'gn', date: '2026-10-12', meal: 'jantar', status: 'on', when: 'N' },
   { personId: 'rl', date: '2026-10-12', meal: 'jantar', status: 'off' },
 ];
-const s = L.summarize(people, '2026-10-12', [], ov, {});
+const s = L.summarize(people, '2026-10-12', [], L.mergeNotes(ov, [{ id: 'n1', personId: 'gn', date: '2026-10-12', meal: 'jantar', text: '+leve', approved: false }]), {});
 assert.equal(s.almoco.total, 1);
 assert.equal(s.almoco.early[0].timeShown, '12:00');
 assert.equal(s.jantar.total, 1);
@@ -150,6 +150,21 @@ assert.equal(onT('2026-10-16', 'almoco'), false);
 assert.equal(onT('2026-10-16', 'jantar'), true);
 assert.equal(L.describePeriod(trip), 'ter 13/10 (jantar) a sex 16/10 (almoço)');
 assert.equal(L.describePeriod({ from: '2026-10-13', to: '2026-10-14' }), 'ter 13/10 a qua 14/10');
+
+// Observação sem mudança de status mantém a regra; notas de outros não vazam
+const onlyNote = L.mergeNotes([], [{ id: 'n2', personId: 'rl', date: '2026-10-13', meal: 'almoco', text: 'sem sal', approved: true }]);
+const rn = L.resolve(rl, '2026-10-13', 'almoco', [], L.overrideMap(onlyNote), {});
+assert.equal(rn.on, true);
+assert.equal(rn.source, 'padrão');
+assert.equal(rn.note, 'sem sal');
+assert.equal(rn.noteApproved, true);
+// override antigo com nota embutida: mergeNotes descarta o texto antigo
+const legacy = L.mergeNotes([{ personId: 'rl', date: '2026-10-13', meal: 'almoco', status: 'off', note: 'antigo' }], []);
+assert.equal(legacy[0].note, '');
+assert.equal(L.describeState({ on: true, when: 'N', note: 'x' }), 'faz');
+assert.equal(L.isBbqMeal('2026-10-17', 'almoco'), true);
+assert.equal(L.isBbqMeal('2026-10-17', 'jantar'), false);
+assert.equal(L.isBbqMeal('2026-10-16', 'almoco'), false);
 
 console.log('OK — todos os testes passaram');
 export default 'OK';

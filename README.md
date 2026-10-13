@@ -37,6 +37,13 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 - No painel, o administrador tem em cada refeição: **+ Pessoas** (+1, +2, +5…), **Churrasco** (participantes e público:
   estudantes, profissionais ou misto; o total passa a ser o nº de participantes) e **Alterar pessoa…**.
 
+## Observações dos comensais
+
+Ficam na coleção `notes`, separadas das alterações (que a cozinha lê). Pelas regras do Firestore, a cozinha só lê
+as observações com `approved == true`: as dos comensais nascem ocultas e o administrador as libera no painel
+("liberar para a cozinha"); as escritas pelo administrador já nascem liberadas (opção no diálogo).
+Os alertas de mudança tardia não incluem o texto das observações. O churrasco só é oferecido nos almoços de sábado e domingo.
+
 ## Planilha de comensais
 
 Em **Pessoas → Importar planilha** (arquivo .xlsx). Colunas reconhecidas na primeira linha:
@@ -124,6 +131,7 @@ test/                 testes da lógica
 - `dayNotes/{id}` — recados do administrador: `date`, `meal` (vazio = geral), `text`, `extra`
 - `messages/{id}` — `dir` (`k2a` cozinha→admin, `a2k` admin→cozinha), `text`, `from`, `createdAt`, `readAt`
 - `daily/{data}` — totais gravados de cada dia (estatísticas)
+- `notes/{pessoa_data_refeição}` — observação: `text`, `approved` (a cozinha só lê as liberadas)
 - `events/{data_refeição}` — churrasco: `count`, `audience`, `note`
 - `alerts/{id}` — mudanças depois do prazo: `initials`, `items[]`, `createdAt`, `ackAt`
 - `settings/app` — horários padrão; `settings/bootstrap` — marca do primeiro administrador

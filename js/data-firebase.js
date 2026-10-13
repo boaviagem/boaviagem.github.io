@@ -128,7 +128,30 @@ export function createFirebaseApi(config) {
     listOverridesRange: async (from, to) =>
       rows(await getDocs(query(col('overrides'), where('date', '>=', from), where('date', '<=', to)))),
     listOverridesByPerson: async (pid) => rows(await getDocs(query(col('overrides'), where('personId', '==', pid)))),
-    setOverride: (o, uid) => setDoc(d('overrides', `${o.personId}_${o.date}_${o.meal}`), { ...o, updatedAt: Date.now(), updatedBy: uid }),
+    setOverride: (o, uid) => setDoc(d('overrides', `${o.personId}_${o.date}_${o.meal}`), { ...o, note: '', updatedAt: Date.now(), updatedBy: uid }),
+
+    // Observações dos comensais: a cozinha só lê as liberadas (approved == true)
+    async listNotes(from, to, approvedOnly) {
+      const q = approvedOnly ? query(col('notes'), where('approved', '==', true))
+        : query(col('notes'), where('date', '>=', from), where('date', '<=', to));
+      return (await soft(async () => rows(await getDocs(q)))).filter((n) => n.date >= from && n.date <= to);
+    },
+    listNotesByPerson: (pid) => soft(async () => rows(await getDocs(query(col('notes'), where('personId', '==', pid))))),
+    setNote: (n, uid) => setDoc(d('notes', `${n.personId}_${n.date}_${n.meal}`), { ...n, updatedAt: Date.now(), updatedBy: uid }),
+    deleteNote: (pid, date, meal) => deleteDoc(d('notes', `${pid}_${date}_${meal}`)),
+    approveNote: (id, approved) => updateDoc(d('notes', id), { approved }),
+    // Uma vez: tira as observações antigas de dentro das alterações (que a cozinha lê) e as guarda ocultas
+    async migrateNotes() {
+      const snap = await getDocs(query(col('overrides'), where('note', '>', '')));
+      for (const x of snap.docs) {
+        const o = x.data();
+        const b = writeBatch(db);
+        b.set(d('notes', `${o.personId}_${o.date}_${o.meal}`), { personId: o.personId, date: o.date, meal: o.meal, text: o.note, approved: false, updatedAt: Date.now() });
+        b.update(x.ref, { note: '' });
+        await b.commit();
+      }
+      return snap.size;
+    },
     deleteOverride: (pid, date, meal) => deleteDoc(d('overrides', `${pid}_${date}_${meal}`)),
 
     listPeriodsFrom: async (from) => rows(await getDocs(query(col('periods'), where('to', '>=', from)))),
