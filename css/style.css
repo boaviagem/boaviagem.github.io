@@ -154,6 +154,10 @@ button.small { padding: 4px 10px; font-size: .85rem; }
 .overview td.temp { text-align: left; white-space: normal; min-width: 220px; font-size: .78rem; }
 .overview tfoot td, .overview tfoot th { font-weight: 700; border-top: 2px solid var(--line); }
 
+.bday { border-left: 4px solid var(--warn); }
+details.diets summary { cursor: pointer; }
+details.diets ul { margin-top: 8px; }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }

@@ -426,3 +426,14 @@ export function mergeNotes(overrides, notes) {
 }
 
 export const isBbqMeal = (date, meal) => meal === 'almoco' && [0, 6].includes(weekday(date));
+
+// ---------- Aniversários (só dia e mês: 'MM-DD') ----------
+export const fmtBday = (b) => (b ? `${b.slice(3)}/${b.slice(0, 2)}` : '');
+export function birthdaysBetween(people, from, days) {
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const d = addDays(from, i);
+    for (const p of people || []) if (p.active !== false && p.birthday === d.slice(5)) out.push({ date: d, person: p });
+  }
+  return out;
+}

@@ -44,6 +44,13 @@ as observações com `approved == true`: as dos comensais nascem ocultas e o adm
 ("liberar para a cozinha"); as escritas pelo administrador já nascem liberadas (opção no diálogo).
 Os alertas de mudança tardia não incluem o texto das observações. O churrasco só é oferecido nos almoços de sábado e domingo.
 
+## Regime e aniversário
+
+- **Regime:** texto por pessoa (`people.dietText`), editado só pelo administrador em Pessoas → Editar; a cozinha vê
+  no painel (lista “Regimes” e ao tocar/passar sobre as iniciais roxas).
+- **Aniversário:** dia e mês (`people.birthday`, `MM-DD`), preenchido pela própria pessoa em Conta ou pelo
+  administrador; a cozinha vê no painel (hoje e próximos 7 dias) e na semana.
+
 ## Planilha de comensais
 
 Em **Pessoas → Importar planilha** (arquivo .xlsx). Colunas reconhecidas na primeira linha:

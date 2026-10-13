@@ -64,7 +64,8 @@ function chip(item, cls = '', extra = '', meal = '') {
   const name = isAdmin() ? fullName(item.id) : '';
   const label = esc(item.initials) + (S.showNames && name ? ` <span class="t">${esc(name)}</span>` : '');
   const edit = meal && isAdmin() ? ` data-pid="${item.id}" data-meal="${meal}" role="button" tabindex="0"` : '';
-  return `<span class="chip ${cls} ${item.diet ? 'diet' : ''} ${item.guest ? 'guest' : ''} ${edit ? 'editable' : ''}"${edit} title="${esc(name)}${item.diet ? ' (regime)' : ''}${edit ? ' — tocar para alterar' : ''}">${label}${extra ? ` <span class="t">${esc(extra)}</span>` : ''}</span>`;
+  const dietText = item.diet ? personById(item.id)?.dietText : '';
+  return `<span class="chip ${cls} ${item.diet ? 'diet' : ''} ${item.guest ? 'guest' : ''} ${edit ? 'editable' : ''}"${edit} title="${esc(name)}${item.diet ? ` (regime${dietText ? ': ' + esc(dietText) : ''})` : ''}${edit ? ' — tocar para alterar' : ''}">${label}${extra ? ` <span class="t">${esc(extra)}</span>` : ''}</span>`;
 }
 
 // ---------- Sessão ----------
@@ -287,6 +288,21 @@ async function daySummary(date) {
   return { sum, notes, ovs, pers, events };
 }
 
+// ---------- Aniversários e regimes (visíveis para a cozinha) ----------
+function birthdayCard(date) {
+  const list = L.birthdaysBetween(S.people, date, 8);
+  if (!list.length) return '';
+  const today = list.filter((x) => x.date === date), next = list.filter((x) => x.date !== date);
+  return `<div class="card bday">${today.length ? `<div>🎂 <b>Hoje é aniversário de ${today.map((x) => esc(x.person.initials)).join(', ')}</b></div>` : ''}
+    ${next.length ? `<div class="small muted">Próximos: ${next.map((x) => `${esc(x.person.initials)} (${L.fmtDate(x.date).toLowerCase()})`).join(' · ')}</div>` : ''}</div>`;
+}
+function dietCard() {
+  const diet = S.people.filter((p) => p.active !== false && p.diet);
+  if (!diet.length) return '';
+  return `<details class="card diets"><summary><b>Regimes (${diet.length})</b> <span class="small muted">— toque para ver</span></summary>
+    <ul class="notes">${diet.map((p) => `<li><span class="chip diet">${esc(p.initials)}</span> ${p.dietText ? esc(p.dietText) : '<span class="muted">(sem descrição)</span>'}</li>`).join('')}</ul></details>`;
+}
+
 // ---------- Alertas: mudanças depois do horário de aviso ----------
 async function sendAlert(person, items) {
   if (!items.length) return;
@@ -443,9 +459,11 @@ async function viewPainel() {
       ${isAdmin() ? `<label class="check"><input type="checkbox" id="ck-names" ${S.showNames ? 'checked' : ''}> mostrar nomes</label>` : ''}
     </div>
     ${alertsCard(alerts)}
+    ${birthdayCard(date)}
     ${general.length ? `<div class="card recado"><div class="sub" style="margin-top:0">Recados do administrador</div>
       <ul class="notes">${general.map(dayNoteItem).join('')}</ul></div>` : ''}
     <div class="grid3">${L.MEALS.map((m) => mealCard(m, sum[m], date)).join('')}</div>
+    ${dietCard()}
     ${isAdmin() ? '<p class="muted small">Toque numa pessoa para tirá-la da refeição, mudar o horário ou deixar observação.</p>' : ''}
     <p class="muted small" style="margin-top:12px"><span class="chip diet">XX</span> = regime ·
       <span class="chip absent">XX</span> = regime que não faz a refeição</p>`;
@@ -514,7 +532,8 @@ async function viewSemana() {
         ${extra.length ? `<div class="small" style="color:var(--info)">${extra.join(' · ')}</div>` : ''}${abs}</td>`;
     }).join('');
     const gen = dn.filter((n) => !n.meal).length;
-    rows.push(`<tr class="clickable" data-d="${d}"><th>${L.fmtDate(d)}${gen ? ' <span class="badge plus" title="Recado do administrador">recado</span>' : ''}</th>${cells}</tr>`);
+    const bd = L.birthdaysBetween(S.people, d, 1).map((x) => esc(x.person.initials)).join(' ');
+    rows.push(`<tr class="clickable" data-d="${d}"><th>${L.fmtDate(d)}${gen ? ' <span class="badge plus" title="Recado do administrador">recado</span>' : ''}${bd ? ` <span class="badge bbq" title="Aniversário">🎂 ${bd}</span>` : ''}</th>${cells}</tr>`);
   }
   main.innerHTML = `
     <div class="card row spread">
@@ -852,7 +871,8 @@ async function viewPessoas() {
     const u = p.uid && userOf(p.uid);
     const acc = u ? `${esc(u.email || S.names[p.id]?.email || '')} · ${u.role}` : (p.guest ? 'convidado' : 'sem conta');
     return `<div class="list-item ${p.active === false ? 'inactive' : ''}">
-      <div><strong>${esc(p.initials)}</strong> ${p.diet ? '<span class="badge">regime</span>' : ''} ${esc(fullName(p.id))}
+      <div><strong>${esc(p.initials)}</strong> ${p.diet ? '<span class="badge">regime</span>' : ''} ${esc(fullName(p.id))}${p.birthday ? ` <span class="small muted">🎂 ${L.fmtBday(p.birthday)}</span>` : ''}
+        ${p.diet && p.dietText ? `<br><span class="small" style="color:var(--diet)">${esc(p.dietText)}</span>` : ''}
         <br><span class="small muted">${acc}${p.active === false ? ' · inativo' : ''}${p.uid === S.user.uid ? ' · você' : ''}</span></div>
       <button data-edit="${p.id}">Editar</button></div>`;
   }).join('');
@@ -919,6 +939,18 @@ function bindOverview() {
   $$('.overview tr[data-pid]').forEach((tr) => tr.addEventListener('click', () => { S.targetPid = tr.dataset.pid; location.hash = '#/padrao'; }));
 }
 
+// Aniversário: dia e mês ('MM-DD'), sem ano
+function bdaySelects(b = '') {
+  const [mm, dd] = b ? b.split('-') : ['', ''];
+  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  return `<span class="row" style="display:inline-flex">
+    <select name="bdd" aria-label="Dia"><option value="">dia</option>${Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0'))
+      .map((v) => `<option ${v === dd ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <select name="bdm" aria-label="Mês"><option value="">mês</option>${MESES.map((n, i) => {
+      const v = String(i + 1).padStart(2, '0'); return `<option value="${v}" ${v === mm ? 'selected' : ''}>${n}</option>`; }).join('')}</select></span>`;
+}
+const readBday = (f) => (f.bdd.value && f.bdm.value ? `${f.bdm.value}-${f.bdd.value}` : '');
+
 function personForm(p) {
   const isNew = !p;
   const u = p?.uid && S.users.find((x) => x.id === p.uid);
@@ -946,6 +978,8 @@ function personForm(p) {
       <div class="row"><label style="width:90px">Iniciais <input name="initials" maxlength="4" required value="${esc(p?.initials)}" style="text-transform:uppercase"></label>
         <label style="flex:1">Nome e sobrenome <input name="fullName" value="${esc(p ? fullName(p.id) : '')}"></label></div>
       <label class="check"><input type="checkbox" name="diet" ${p?.diet ? 'checked' : ''}> Faz regime</label>
+      <label id="dietbox">Regime (a cozinha vê) <textarea name="dietText" rows="2" maxlength="300" placeholder="ex.: sem sal; sem açúcar; pouca gordura">${esc(p?.dietText)}</textarea></label>
+      <div><span class="small muted">Aniversário (a cozinha vê)</span> ${bdaySelects(p?.birthday)}</div>
       <label class="check"><input type="checkbox" name="guest" ${p?.guest ? 'checked' : ''}> Convidado</label>
       ${isNew ? `<label>Regra padrão inicial <select name="preset">${presetOptions('todas')}</select></label>
         <p class="muted small">Para convidado, use “Nenhuma refeição” e marque os dias em Refeições ou Temporárias.</p>`
@@ -964,7 +998,7 @@ function personForm(p) {
         dlg.close(); toast(`${p.initials} excluído.`); route();
       }, e.target);
     });
-    const sync = () => { const b = $('#accbox', root); if (b) b.hidden = f.acc?.value !== 'new'; };
+    const sync = () => { const b = $('#accbox', root); if (b) b.hidden = f.acc?.value !== 'new'; $('#dietbox', root).hidden = !f.diet.checked; };
     f.addEventListener('change', (e) => {
       sync();
       if (isNew && e.target.name === 'guest' && f.guest.checked) f.preset.value = 'nenhuma';
@@ -982,7 +1016,7 @@ function personForm(p) {
       const acc = f.acc?.value;
       if (acc === 'new' && (!f.email.value.trim() || (f.pw.value && f.pw.value.length < 6))) return toast('Informe o e-mail; a senha, se houver, precisa de 6 caracteres.');
       guard(async () => {
-        const person = { initials, diet: f.diet.checked, guest: f.guest.checked };
+        const person = { initials, diet: f.diet.checked, guest: f.guest.checked, dietText: f.diet.checked ? f.dietText.value.trim() : '', birthday: readBday(f) };
         const name = { fullName: f.fullName.value.trim() };
         if (isNew) {
           person.defaultRule = L.PRESETS[f.preset.value].grid();
@@ -1033,12 +1067,23 @@ async function viewConta() {
   main.innerHTML = `<div class="card stack"><h2>Minha conta</h2>
       <p>${esc(S.user.email)}${S.myPid ? ` · ${esc(personById(S.myPid)?.initials)}` : ''}</p>
       <button id="b-logout">Sair</button></div>
+    ${S.myPid ? `<form class="card stack" id="f-bday"><h2>Aniversário</h2>
+      <p class="muted small">Só dia e mês. Fica visível para a cozinha.</p>
+      <div>${bdaySelects(personById(S.myPid)?.birthday)}</div>
+      <div class="row"><button class="primary" type="submit">Salvar aniversário</button></div></form>` : ''}
     ${DEMO ? '' : `<form class="card stack" id="f-pw"><h2>Trocar senha</h2>
       <label>Senha atual <input type="password" name="old" autocomplete="current-password" required></label>
       <label>Nova senha <input type="password" name="pw1" minlength="6" autocomplete="new-password" required></label>
       <label>Repita a nova senha <input type="password" name="pw2" minlength="6" autocomplete="new-password" required></label>
       <div class="row"><button class="primary" type="submit">Trocar senha</button></div></form>`}`;
   $('#b-logout').addEventListener('click', () => { S.role = null; location.hash = ''; api.signOut(); });
+  const fb = $('#f-bday');
+  fb?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const b = readBday(fb);
+    if ((fb.bdd.value && !fb.bdm.value) || (!fb.bdd.value && fb.bdm.value)) return toast('Escolha o dia e o mês.');
+    guard(async () => { await api.updatePerson(S.myPid, { birthday: b }); personById(S.myPid).birthday = b; toast('Aniversário salvo.'); }, fb.querySelector('button'));
+  });
   const f = $('#f-pw');
   f?.addEventListener('submit', (e) => {
     e.preventDefault();

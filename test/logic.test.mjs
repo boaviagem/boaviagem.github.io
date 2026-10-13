@@ -166,5 +166,11 @@ assert.equal(L.isBbqMeal('2026-10-17', 'almoco'), true);
 assert.equal(L.isBbqMeal('2026-10-17', 'jantar'), false);
 assert.equal(L.isBbqMeal('2026-10-16', 'almoco'), false);
 
+// Aniversários
+const bp = [{ id: 'a', initials: 'AA', birthday: '10-14' }, { id: 'b', initials: 'BB', birthday: '01-02', active: false }];
+assert.deepEqual(L.birthdaysBetween(bp, '2026-10-12', 7).map((x) => x.date + x.person.initials), ['2026-10-14AA']);
+assert.equal(L.birthdaysBetween(bp, '2026-12-30', 5).length, 0); // BB inativo
+assert.equal(L.fmtBday('10-14'), '14/10');
+
 console.log('OK — todos os testes passaram');
 export default 'OK';

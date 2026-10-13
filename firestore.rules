@@ -56,7 +56,7 @@ service cloud.firestore {
     match /people/{pid} {
       allow read: if isAdmin() || isKitchen() || owns(pid);
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (owns(pid) && onlyKeys(['defaultRule', 'updatedAt']));
+      allow update: if isAdmin() || (owns(pid) && onlyKeys(['defaultRule', 'birthday', 'updatedAt']));
     }
 
     // Nome completo e e-mail — invisíveis para a cozinha
