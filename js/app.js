@@ -245,7 +245,7 @@ function mealCard(meal, s, date) {
   if (s.takeaway.length) resumo.push(`${s.takeaway.length} p/ levar`);
   parts.push(`<div class="muted small">${resumo.join(' · ')}</div>`);
   if (s.dietAbsent.length) {
-    parts.push(`<div class="sub">Regimes que NÃO fazem</div>${chips(s.dietAbsent, 'absent')}`);
+    parts.push(`<div class="sub">Regimes ausentes</div>${chips(s.dietAbsent, 'absent')}`);
   }
   if (s.normal.length) parts.push(`<div class="sub">Horário normal (${s.normal.length})</div>${chips(s.normal)}`);
   if (s.early.length) parts.push(`<div class="sub">Mais cedo</div>${chips(s.early, 'early', (i) => i.timeShown || '+cedo')}`);
@@ -496,7 +496,7 @@ async function viewPainel() {
     ${dietCard()}
     ${isAdmin() ? '<p class="muted small">Toque numa pessoa para tirá-la da refeição, mudar o horário ou deixar observação.</p>' : ''}
     <p class="muted small" style="margin-top:12px"><span class="chip diet">XX</span> = regime ·
-      <span class="chip absent">XX</span> = regime que não faz a refeição</p>`;
+      <span class="chip absent">XX</span> = regime ausente</p>`;
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => {
     const n = Number(b.dataset.go);
     S.dashDate = n === 0 ? L.today() : L.addDays(date, n); route();
