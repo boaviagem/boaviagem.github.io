@@ -132,6 +132,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Chamados da cozinha para o administrador ("🔔 Chamar o administrador")
+    match /calls/{id} {
+      allow read: if isAdmin() || isKitchen();
+      allow create: if isKitchen() && request.resource.data.by == request.auth.uid
+        && request.resource.data.seenAt == null;
+      allow update: if isAdmin() && onlyKeys(['seenAt', 'seenBy']);
+      allow delete: if isAdmin();
+    }
+
     // "Fotografia" diária dos totais, usada nas estatísticas
     match /daily/{date} {
       allow read: if isAdmin() || isKitchen();

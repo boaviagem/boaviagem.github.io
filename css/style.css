@@ -158,6 +158,11 @@ button.small { padding: 4px 10px; font-size: .85rem; }
 details.diets summary { cursor: pointer; }
 details.diets ul { margin-top: 8px; }
 
+.callbar { background: var(--warn); color: #fff; padding: 6px 16px; position: sticky; top: 0; z-index: 20; }
+.callbar .call-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; max-width: 960px; margin: 0 auto; padding: 4px 0; }
+.callbar button { background: #fff; color: var(--warn); border: 0; font-weight: 700; }
+.callcard { border-left: 4px solid var(--warn); }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }

@@ -189,6 +189,17 @@ export function createDemoApi() {
     listAlerts: async () => later(list(st.alerts ||= {}).sort((a, b) => b.createdAt - a.createdAt)),
     async ackAlert(id, by) { Object.assign(st.alerts[id], { ackAt: Date.now(), ackBy: by }); save(); },
     async deleteAlert(id) { delete st.alerts[id]; save(); },
+    async addCall(c, by) { (st.calls ||= {})[uid()] = { ...c, by, createdAt: Date.now(), seenAt: null, seenBy: null }; save(); },
+    listCalls: async () => {
+      try { st = JSON.parse(localStorage.getItem(KEY)) || st; } catch { /* */ } // outra aba pode ter marcado "visto"
+      return later(list(st.calls ||= {}).sort((a, b) => b.createdAt - a.createdAt));
+    },
+    async markCallSeen(id, by) { Object.assign(st.calls[id], { seenAt: Date.now(), seenBy: by }); save(); },
+    // Demonstração: confere a cada 3 s (outras abas gravam no mesmo localStorage)
+    watchOpenCalls(cb) {
+      const tick = () => { try { st = JSON.parse(localStorage.getItem(KEY)) || st; } catch { /* */ } cb(list(st.calls ||= {}).filter((c) => !c.seenAt)); };
+      tick(); const h = setInterval(tick, 3000); return () => clearInterval(h);
+    },
     listDaily: async (from, to) => later(list(st.daily).filter((x) => x.date >= from && x.date <= to)),
     async saveDaily(date, meals) { st.daily[date] = { date, meals, at: Date.now() }; save(); },
   };

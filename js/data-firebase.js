@@ -6,7 +6,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, writeBatch,
-  orderBy, limit,
+  orderBy, limit, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 export function createFirebaseApi(config) {
@@ -207,6 +207,14 @@ export function createFirebaseApi(config) {
     listAlerts: () => soft(async () => rows(await getDocs(query(col('alerts'), orderBy('createdAt', 'desc'), limit(100))))),
     ackAlert: (id, uid) => updateDoc(d('alerts', id), { ackAt: Date.now(), ackBy: uid }),
     deleteAlert: (id) => deleteDoc(d('alerts', id)),
+
+    // Chamados da cozinha para o administrador
+    addCall: (c, uid) => addDoc(col('calls'), { ...c, by: uid, createdAt: Date.now(), seenAt: null, seenBy: null }),
+    listCalls: () => soft(async () => rows(await getDocs(query(col('calls'), orderBy('createdAt', 'desc'), limit(30))))),
+    markCallSeen: (id, uid) => updateDoc(d('calls', id), { seenAt: Date.now(), seenBy: uid }),
+    // Em tempo real: chamados ainda não vistos (devolve a função para parar de ouvir)
+    watchOpenCalls: (cb) => onSnapshot(query(col('calls'), where('seenAt', '==', null)),
+      (snap) => cb(rows(snap)), (e) => console.warn('watchOpenCalls', e.code)),
 
     listDaily: async (from, to) =>
       rows(await getDocs(query(col('daily'), where('date', '>=', from), where('date', '<=', to)))),

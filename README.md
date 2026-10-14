@@ -45,6 +45,13 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 - Se o comensal editar ou apagar a observação, a cópia da cozinha é apagada e ela volta a ficar oculta.
 - Os alertas de mudança tardia não incluem o texto das observações. O churrasco só aparece nos almoços de sáb/dom.
 
+## Chamar o administrador
+
+No painel da cozinha (administradora e auxiliares), o botão **🔔 Chamar o administrador** registra um chamado
+(motivo + mensagem opcional) em `calls`. Com o app aberto, o administrador vê na hora uma faixa vermelha no topo
+(com bipe e, se ativada em Conta, notificação do navegador) e clica em **Visto**; a cozinha vê o status.
+Com o app fechado, o chamado aparece quando o administrador abrir o app (aviso no celular exigiria push/plano pago).
+
 ## Regime e aniversário
 
 - **Regime:** texto por pessoa (`people.dietText`), editado só pelo administrador em Pessoas → Editar; a cozinha vê
@@ -140,6 +147,7 @@ test/                 testes da lógica
 - `messages/{id}` — `dir` (`k2a` cozinha→admin, `a2k` admin→cozinha), `text`, `from`, `createdAt`, `readAt`
 - `daily/{data}` — totais gravados de cada dia (estatísticas)
 - `notes/{pessoa_data_refeição}` — observação com autor: `text`, `approved`, `kitchenId` (admin e autor)
+- `calls/{id}` — chamados da cozinha: `reason`, `text`, `createdAt`, `seenAt`
 - `kitchenNotes/{id}` — cópia anônima das observações liberadas (`date`, `meal`, `text`), lida pela cozinha
 - `events/{data_refeição}` — churrasco: `count`, `audience`, `note`
 - `alerts/{id}` — mudanças depois do prazo: `initials`, `items[]`, `createdAt`, `ackAt`

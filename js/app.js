@@ -71,6 +71,7 @@ function chip(item, cls = '', extra = '', meal = '') {
 // ---------- Sessão ----------
 api.onAuth(async (u) => {
   S.user = u;
+  stopWatchingCalls();
   if (!u) { $('#nav').hidden = true; $('#who').innerHTML = ''; return renderLogin(); }
   main.innerHTML = loading;
   try {
@@ -92,6 +93,7 @@ async function loadSession() {
   if (!S.targetPid || !personById(S.targetPid)) S.targetPid = S.myPid || S.people[0]?.id || null;
   renderNav();
   refreshUnread();
+  if (isAdmin()) startWatchingCalls();
   if (isAdmin()) api.migrateNotes().then((n) => n && console.info(`${n} observação(ões) movidas`)).catch((e) => console.warn('migrateNotes', e));
   return true;
 }
@@ -294,6 +296,68 @@ async function daySummary(date) {
   return { sum, notes, ovs, pers, events, cnotes };
 }
 
+// ---------- Chamados: a cozinha chama o administrador ----------
+const CALL_REASONS = ['Urgente', 'Falta de ingrediente', 'Dúvida sobre refeição', 'Outro'];
+async function kitchenCallCard() {
+  const recent = (await api.listCalls()).filter((c) => Date.now() - c.createdAt < 864e5).slice(0, 5);
+  return `<div class="card callcard"><div class="row spread">
+      <span class="small muted">Precisa do administrador?</span>
+      <button class="primary" id="b-call">🔔 Chamar o administrador</button></div>
+    ${recent.length ? `<ul class="notes small" style="margin-top:8px">${recent.map((c) => `<li>${fmtDateTime(c.createdAt)} — <b>${esc(c.reason)}</b>${
+      c.text ? ': ' + esc(c.text) : ''} · ${c.seenAt ? `<span class="muted">visto ${fmtDateTime(c.seenAt)}</span>` : '<span style="color:var(--warn)">aguardando</span>'}</li>`).join('')}</ul>` : ''}</div>`;
+}
+function callDialog() {
+  openDialog(`<form id="f-call" class="stack">
+      <h3>🔔 Chamar o administrador</h3>
+      <div class="seg">${CALL_REASONS.map((r, i) => `<label><input type="radio" name="reason" value="${r}" ${i === 0 ? 'checked' : ''}> ${r}</label>`).join('')}</div>
+      <label>Mensagem (opcional) <input name="text" maxlength="200" placeholder="ex.: acabou o gás"></label>
+      <div class="row spread"><span></span><span class="row"><button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Chamar</button></span></div></form>`, (root) => {
+    const f = $('#f-call', root);
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      guard(async () => {
+        await api.addCall({ reason: f.reason.value, text: f.text.value.trim(), role: S.role, email: S.user.email }, S.user.uid);
+        dlg.close(); toast('Administrador chamado.'); route();
+      }, f.querySelector('[type=submit]'));
+    });
+  });
+}
+
+// Administrador: faixa no topo com os chamados não vistos, atualizada em tempo real
+let unwatchCalls = null, knownCalls = new Set();
+function stopWatchingCalls() { unwatchCalls?.(); unwatchCalls = null; knownCalls = new Set(); $('#callbar').hidden = true; }
+function startWatchingCalls() {
+  stopWatchingCalls();
+  let first = true;
+  unwatchCalls = api.watchOpenCalls((calls) => {
+    calls.sort((a, b) => b.createdAt - a.createdAt);
+    const fresh = calls.filter((c) => !knownCalls.has(c.id));
+    calls.forEach((c) => knownCalls.add(c.id));
+    if (!first && fresh.length) notifyCall(fresh[0]);
+    first = false;
+    renderCallbar(calls);
+  });
+}
+function renderCallbar(calls) {
+  const bar = $('#callbar');
+  if (!calls.length) { bar.hidden = true; bar.innerHTML = ''; return; }
+  bar.innerHTML = calls.map((c) => `<div class="call-item"><span>🔔 <b>A cozinha está chamando</b> — ${esc(c.reason)}${
+    c.text ? ': ' + esc(c.text) : ''} <span class="small">(${fmtDateTime(c.createdAt)})</span></span>
+    <button class="small" data-seen="${c.id}">Visto</button></div>`).join('');
+  bar.hidden = false;
+  $$('[data-seen]', bar).forEach((b) => b.addEventListener('click', () => guard(() => api.markCallSeen(b.dataset.seen, S.user.uid), b)));
+}
+function notifyCall(c) {
+  try { // bipe curto
+    const ctx = new AudioContext(), o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.4);
+  } catch { /* sem áudio */ }
+  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+    try { new Notification('Cozinha chamando', { body: c.reason + (c.text ? ': ' + c.text : '') }); } catch { /* */ }
+  }
+}
+
 // ---------- Aniversários e regimes (visíveis para a cozinha) ----------
 function birthdayCard(date) {
   const list = L.birthdaysBetween(S.people, date, 8);
@@ -488,6 +552,7 @@ async function viewPainel() {
       ${isAdmin() ? '<button id="b-note">+ Recado para a cozinha</button>' : ''}
       ${isAdmin() ? `<label class="check"><input type="checkbox" id="ck-names" ${S.showNames ? 'checked' : ''}> mostrar nomes</label>` : ''}
     </div>
+    ${isKitchen() ? await kitchenCallCard() : ''}
     ${alertsCard(alerts)}
     ${birthdayCard(date)}
     ${general.length ? `<div class="card recado"><div class="sub" style="margin-top:0">Recados do administrador</div>
@@ -505,6 +570,7 @@ async function viewPainel() {
   $('#b-reload').addEventListener('click', () => route());
   $('#b-note')?.addEventListener('click', () => addDayNoteDialog(date));
   bindAlerts(alerts);
+  $('#b-call')?.addEventListener('click', callDialog);
   const noteById = (id) => cnotes.find((n) => n.id === id);
   $$('[data-approve]').forEach((b) => b.addEventListener('click', () => guard(async () => {
     const n = noteById(b.dataset.approve);
@@ -1103,6 +1169,10 @@ async function viewConta() {
   main.innerHTML = `<div class="card stack"><h2>Minha conta</h2>
       <p>${esc(S.user.email)}${S.myPid ? ` · ${esc(personById(S.myPid)?.initials)}` : ''}</p>
       <button id="b-logout">Sair</button></div>
+    ${isAdmin() && 'Notification' in window ? `<div class="card stack"><h2>Chamados da cozinha</h2>
+      <p class="muted small">Com o app aberto (mesmo em outra aba), você recebe uma notificação do navegador quando a cozinha chamar.
+        Situação: <b>${{ granted: 'ativadas', denied: 'bloqueadas no navegador', default: 'desativadas' }[Notification.permission]}</b>.</p>
+      ${Notification.permission === 'default' ? '<div class="row"><button id="b-notif">Ativar notificações</button></div>' : ''}</div>` : ''}
     ${S.myPid ? `<form class="card stack" id="f-bday"><h2>Aniversário</h2>
       <p class="muted small">Só dia e mês. Fica visível para a cozinha.</p>
       <div>${bdaySelects(personById(S.myPid)?.birthday)}</div>
@@ -1113,6 +1183,7 @@ async function viewConta() {
       <label>Repita a nova senha <input type="password" name="pw2" minlength="6" autocomplete="new-password" required></label>
       <div class="row"><button class="primary" type="submit">Trocar senha</button></div></form>`}`;
   $('#b-logout').addEventListener('click', () => { S.role = null; location.hash = ''; api.signOut(); });
+  $('#b-notif')?.addEventListener('click', async () => { await Notification.requestPermission(); route(); });
   const fb = $('#f-bday');
   fb?.addEventListener('submit', (e) => {
     e.preventDefault();
