@@ -39,10 +39,11 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 
 ## Observações dos comensais
 
-Ficam na coleção `notes`, separadas das alterações (que a cozinha lê). Pelas regras do Firestore, a cozinha só lê
-as observações com `approved == true`: as dos comensais nascem ocultas e o administrador as libera no painel
-("liberar para a cozinha"); as escritas pelo administrador já nascem liberadas (opção no diálogo).
-Os alertas de mudança tardia não incluem o texto das observações. O churrasco só é oferecido nos almoços de sábado e domingo.
+- `notes` (com o autor): só o administrador e o próprio autor leem. As dos comensais nascem ocultas.
+- O administrador edita, apaga, libera ou oculta cada observação no painel. Ao liberar, o app cria em
+  `kitchenNotes` uma **cópia anônima** (data, refeição, texto), que é o que a cozinha lê — sem as iniciais.
+- Se o comensal editar ou apagar a observação, a cópia da cozinha é apagada e ela volta a ficar oculta.
+- Os alertas de mudança tardia não incluem o texto das observações. O churrasco só aparece nos almoços de sáb/dom.
 
 ## Regime e aniversário
 
@@ -138,7 +139,8 @@ test/                 testes da lógica
 - `dayNotes/{id}` — recados do administrador: `date`, `meal` (vazio = geral), `text`, `extra`
 - `messages/{id}` — `dir` (`k2a` cozinha→admin, `a2k` admin→cozinha), `text`, `from`, `createdAt`, `readAt`
 - `daily/{data}` — totais gravados de cada dia (estatísticas)
-- `notes/{pessoa_data_refeição}` — observação: `text`, `approved` (a cozinha só lê as liberadas)
+- `notes/{pessoa_data_refeição}` — observação com autor: `text`, `approved`, `kitchenId` (admin e autor)
+- `kitchenNotes/{id}` — cópia anônima das observações liberadas (`date`, `meal`, `text`), lida pela cozinha
 - `events/{data_refeição}` — churrasco: `count`, `audience`, `note`
 - `alerts/{id}` — mudanças depois do prazo: `initials`, `items[]`, `createdAt`, `ackAt`
 - `settings/app` — horários padrão; `settings/bootstrap` — marca do primeiro administrador

@@ -136,17 +136,33 @@ export function createDemoApi() {
     listOverridesRange: async (from, to) => later(list(st.overrides).filter((o) => o.date >= from && o.date <= to)),
     listOverridesByPerson: async (pid) => later(list(st.overrides).filter((o) => o.personId === pid)),
     async setOverride(o) { st.overrides[`${o.personId}_${o.date}_${o.meal}`] = { ...structuredClone(o), note: '' }; save(); },
-    listNotes: async (from, to, approvedOnly) => later(list(st.notes ||= {}).filter((n) => n.date >= from && n.date <= to && (!approvedOnly || n.approved))),
+    listNotes: async (from, to) => later(list(st.notes ||= {}).filter((n) => n.date >= from && n.date <= to)),
+    listKitchenNotes: async (from, to) => later(list(st.kitchenNotes ||= {}).filter((n) => n.date >= from && n.date <= to)),
     listNotesByPerson: async (pid) => later(list(st.notes ||= {}).filter((n) => n.personId === pid)),
-    async setNote(n) { (st.notes ||= {})[`${n.personId}_${n.date}_${n.meal}`] = structuredClone(n); save(); },
-    async deleteNote(pid, date, meal) { delete (st.notes ||= {})[`${pid}_${date}_${meal}`]; save(); },
-    async approveNote(id, approved) { st.notes[id].approved = approved; save(); },
+    async saveNote({ personId, date, meal, text }, share, prevKitchenId) {
+      st.kitchenNotes ||= {};
+      let kitchenId = null;
+      if (share) { kitchenId = prevKitchenId || uid(); st.kitchenNotes[kitchenId] = { date, meal, text }; }
+      else if (prevKitchenId) delete st.kitchenNotes[prevKitchenId];
+      (st.notes ||= {})[`${personId}_${date}_${meal}`] = { personId, date, meal, text, approved: !!share, kitchenId };
+      save();
+    },
+    async deleteNote(pid, date, meal, kitchenId) {
+      delete (st.notes ||= {})[`${pid}_${date}_${meal}`];
+      if (kitchenId) delete (st.kitchenNotes ||= {})[kitchenId];
+      save();
+    },
     async migrateNotes() {
       let n = 0;
       for (const [k, o] of Object.entries(st.overrides)) {
         if (!o.note) continue;
         (st.notes ||= {})[k] = { personId: o.personId, date: o.date, meal: o.meal, text: o.note, approved: false };
         o.note = ''; n++;
+      }
+      for (const o of Object.values(st.notes || {})) {
+        if (!o.approved || o.kitchenId) continue;
+        o.kitchenId = uid();
+        (st.kitchenNotes ||= {})[o.kitchenId] = { date: o.date, meal: o.meal, text: o.text }; n++;
       }
       save(); return n;
     },

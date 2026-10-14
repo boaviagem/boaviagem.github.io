@@ -130,16 +130,31 @@ export function createFirebaseApi(config) {
     listOverridesByPerson: async (pid) => rows(await getDocs(query(col('overrides'), where('personId', '==', pid)))),
     setOverride: (o, uid) => setDoc(d('overrides', `${o.personId}_${o.date}_${o.meal}`), { ...o, note: '', updatedAt: Date.now(), updatedBy: uid }),
 
-    // Observações dos comensais: a cozinha só lê as liberadas (approved == true)
-    async listNotes(from, to, approvedOnly) {
-      const q = approvedOnly ? query(col('notes'), where('approved', '==', true))
-        : query(col('notes'), where('date', '>=', from), where('date', '<=', to));
-      return (await soft(async () => rows(await getDocs(q)))).filter((n) => n.date >= from && n.date <= to);
-    },
+    // Observações: `notes` (com autor) só para administrador e autor; ao liberar, uma cópia ANÔNIMA vai para
+    // `kitchenNotes` (data, refeição e texto), que é o que a cozinha lê.
+    listNotes: (from, to) => soft(async () =>
+      rows(await getDocs(query(col('notes'), where('date', '>=', from), where('date', '<=', to))))),
+    listKitchenNotes: (from, to) => soft(async () =>
+      rows(await getDocs(query(col('kitchenNotes'), where('date', '>=', from), where('date', '<=', to))))),
     listNotesByPerson: (pid) => soft(async () => rows(await getDocs(query(col('notes'), where('personId', '==', pid))))),
-    setNote: (n, uid) => setDoc(d('notes', `${n.personId}_${n.date}_${n.meal}`), { ...n, updatedAt: Date.now(), updatedBy: uid }),
-    deleteNote: (pid, date, meal) => deleteDoc(d('notes', `${pid}_${date}_${meal}`)),
-    approveNote: (id, approved) => updateDoc(d('notes', id), { approved }),
+    // share = visível para a cozinha (só o administrador libera); prevKitchenId = cópia anterior, se houver
+    async saveNote({ personId, date, meal, text }, share, prevKitchenId, uid) {
+      const b = writeBatch(db);
+      let kitchenId = null;
+      if (share) {
+        const kref = prevKitchenId ? d('kitchenNotes', prevKitchenId) : doc(col('kitchenNotes'));
+        kitchenId = kref.id;
+        b.set(kref, { date, meal, text, updatedAt: Date.now() });
+      } else if (prevKitchenId) b.delete(d('kitchenNotes', prevKitchenId));
+      b.set(d('notes', `${personId}_${date}_${meal}`), { personId, date, meal, text, approved: !!share, kitchenId, updatedAt: Date.now(), updatedBy: uid });
+      await b.commit();
+    },
+    async deleteNote(pid, date, meal, kitchenId) {
+      const b = writeBatch(db);
+      b.delete(d('notes', `${pid}_${date}_${meal}`));
+      if (kitchenId) b.delete(d('kitchenNotes', kitchenId));
+      await b.commit();
+    },
     // Uma vez: tira as observações antigas de dentro das alterações (que a cozinha lê) e as guarda ocultas
     async migrateNotes() {
       const snap = await getDocs(query(col('overrides'), where('note', '>', '')));
@@ -150,7 +165,19 @@ export function createFirebaseApi(config) {
         b.update(x.ref, { note: '' });
         await b.commit();
       }
-      return snap.size;
+      // observações já liberadas no formato anterior: cria a cópia anônima da cozinha
+      const appr = await getDocs(query(col('notes'), where('approved', '==', true)));
+      let n = snap.size;
+      for (const x of appr.docs) {
+        const o = x.data();
+        if (o.kitchenId) continue;
+        const kref = doc(col('kitchenNotes'));
+        const b = writeBatch(db);
+        b.set(kref, { date: o.date, meal: o.meal, text: o.text, updatedAt: Date.now() });
+        b.update(x.ref, { kitchenId: kref.id });
+        await b.commit(); n++;
+      }
+      return n;
     },
     deleteOverride: (pid, date, meal) => deleteDoc(d('overrides', `${pid}_${date}_${meal}`)),
 

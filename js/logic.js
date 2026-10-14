@@ -167,6 +167,7 @@ export function resolve(person, date, meal, periods, ovMap, settings) {
     r.note = ov.note || '';
     r.noteId = ov.noteId || null;
     r.noteApproved = !!ov.noteApproved;
+    r.noteKitchenId = ov.noteKitchenId || null;
   }
   if (!r.on) { r.when = 'N'; r.time = ''; }
   r.timeShown = r.when === 'C' ? r.time || settings.early[meal] || ''
@@ -420,7 +421,8 @@ export function mergeNotes(overrides, notes) {
   const m = new Map((overrides || []).map((o) => [ovKey(o.personId, o.date, o.meal), { ...o, note: '' }]));
   for (const n of notes || []) {
     const k = ovKey(n.personId, n.date, n.meal);
-    m.set(k, { ...(m.get(k) || { personId: n.personId, date: n.date, meal: n.meal }), note: n.text, noteId: n.id, noteApproved: !!n.approved });
+    m.set(k, { ...(m.get(k) || { personId: n.personId, date: n.date, meal: n.meal }), note: n.text, noteId: n.id,
+      noteApproved: !!n.approved, noteKitchenId: n.kitchenId || null });
   }
   return [...m.values()];
 }
@@ -436,4 +438,10 @@ export function birthdaysBetween(people, from, days) {
     for (const p of people || []) if (p.active !== false && p.birthday === d.slice(5)) out.push({ date: d, person: p });
   }
   return out;
+}
+
+// Observações liberadas para a cozinha: cópias anônimas (sem autor), por refeição
+export function applyKitchenNotes(summary, knotes) {
+  for (const m of MEALS) summary[m].anonNotes = (knotes || []).filter((n) => n.meal === m);
+  return summary;
 }

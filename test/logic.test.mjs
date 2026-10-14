@@ -172,5 +172,11 @@ assert.deepEqual(L.birthdaysBetween(bp, '2026-10-12', 7).map((x) => x.date + x.p
 assert.equal(L.birthdaysBetween(bp, '2026-12-30', 5).length, 0); // BB inativo
 assert.equal(L.fmtBday('10-14'), '14/10');
 
+// Observações anônimas para a cozinha
+const sk = L.applyKitchenNotes(L.summarize(people, '2026-10-12', [], [], {}), [{ id: 'k1', date: '2026-10-12', meal: 'jantar', text: '+leve' }]);
+assert.equal(sk.jantar.anonNotes.length, 1);
+assert.equal(sk.almoco.anonNotes.length, 0);
+assert.equal(sk.jantar.anonNotes[0].personId, undefined);
+
 console.log('OK — todos os testes passaram');
 export default 'OK';

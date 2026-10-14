@@ -251,17 +251,20 @@ function mealCard(meal, s, date) {
   if (s.early.length) parts.push(`<div class="sub">Mais cedo</div>${chips(s.early, 'early', (i) => i.timeShown || '+cedo')}`);
   if (s.late.length) parts.push(`<div class="sub">Mais tarde</div>${chips(s.late, 'late', (i) => i.timeShown || '+tarde')}`);
   if (s.takeaway.length) parts.push(`<div class="sub">Para levar</div>${chips(s.takeaway, 'take', (i) => i.timeShown)}`);
-  if (s.notes.length) {
-    const ctl = (i) => !isAdmin() || !i.noteId ? ''
-      : i.noteApproved ? ` <span class="badge plus">cozinha vê</span> <button class="link small" data-approve="${i.noteId}" data-v="0">ocultar</button>`
-      : ` <span class="badge">só você vê</span> <button class="link small" data-approve="${i.noteId}" data-v="1">liberar para a cozinha</button>`;
+  if (isAdmin() && s.notes.length) {
+    const ctl = (i) => !i.noteId ? ''
+      : (i.noteApproved ? ' <span class="badge plus">cozinha vê (sem autor)</span>' : ' <span class="badge">só você vê</span>')
+        + ` <button class="link small" data-editnote="${i.noteId}">editar</button>`
+        + ` <button class="link small" data-approve="${i.noteId}" data-v="${i.noteApproved ? 0 : 1}">${i.noteApproved ? 'ocultar' : 'liberar para a cozinha'}</button>`;
     parts.push(`<div class="sub">Observações</div><ul class="notes">${s.notes.map((i) =>
       `<li><strong>${esc(i.initials)}</strong>${i.diet ? ' <span class="badge">R</span>' : ''}${i.on ? '' : ' <span class="muted">(não vem)</span>'}: ${esc(i.note)}${ctl(i)}</li>`).join('')}</ul>`);
+  } else if (!isAdmin() && s.anonNotes?.length) {
+    parts.push(`<div class="sub">Observações</div><ul class="notes">${s.anonNotes.map((n) => `<li>${esc(n.text)}</li>`).join('')}</ul>`);
   }
   if (s.dayNotes?.length) {
     parts.push(`<div class="sub">Recados do administrador</div><ul class="notes">${s.dayNotes.map(dayNoteItem).join('')}</ul>`);
   }
-  if (!s.total && !s.dietAbsent.length && !s.notes.length) parts.push('<p class="muted">Ninguém.</p>');
+  if (!s.total && !s.dietAbsent.length && !s.notes.length && !s.anonNotes?.length) parts.push('<p class="muted">Ninguém.</p>');
   if (ev) parts.push('</details>');
   const st = L.mealStatus(date, meal, S.settings);
   if (st === 'late') parts.push(`<p class="small muted" style="margin-top:8px">🔔 Cozinha avisada (prazo: ${L.fmtDeadline(date, meal, S.settings)})</p>`);
@@ -281,11 +284,14 @@ function dayNoteItem(n) {
 // Totais de um dia (com recados) — também grava a "fotografia" do dia para as estatísticas.
 async function daySummary(date) {
   const [ovs0, pers, notes, events, cnotes] = await Promise.all([api.listOverridesRange(date, date), api.listPeriodsFrom(date),
-    api.listDayNotes(date, date), api.listEvents(date, date), api.listNotes(date, date, !isAdmin())]);
-  const ovs = L.mergeNotes(ovs0, cnotes);
-  const sum = L.applyEvents(L.applyDayNotes(L.summarize(S.people, date, pers, ovs, S.settings), notes), events);
+    api.listDayNotes(date, date), api.listEvents(date, date),
+    isAdmin() ? api.listNotes(date, date) : api.listKitchenNotes(date, date)]);
+  // administrador: observações com autor; cozinha: só as cópias anônimas
+  const ovs = isAdmin() ? L.mergeNotes(ovs0, cnotes) : L.mergeNotes(ovs0, []);
+  const sum = L.applyKitchenNotes(L.applyEvents(L.applyDayNotes(L.summarize(S.people, date, pers, ovs, S.settings), notes), events),
+    isAdmin() ? [] : cnotes);
   saveSnapshot(date, sum);
-  return { sum, notes, ovs, pers, events };
+  return { sum, notes, ovs, pers, events, cnotes };
 }
 
 // ---------- Aniversários e regimes (visíveis para a cozinha) ----------
@@ -341,6 +347,30 @@ function bindAlerts(alerts) {
   $$('[data-ack]').forEach((b) => b.addEventListener('click', () => guard(() => ack([b.dataset.ack]), b)));
   $('[data-ackall]')?.addEventListener('click', (e) => guard(() => ack(alerts.filter((a) => !a.ackAt).map((a) => a.id)), e.target));
   $$('[data-delalert]').forEach((b) => b.addEventListener('click', () => guard(async () => { await api.deleteAlert(b.dataset.delalert); route(); }, b)));
+}
+
+// ---------- Administrador: editar a observação de um comensal ----------
+function editNoteDialog(n) {
+  const who = personById(n.personId);
+  openDialog(`<form id="f-enote" class="stack">
+      <h3>Observação de ${esc(who?.initials || '?')} · ${L.MEAL_LABEL[n.meal]} — ${L.fmtDate(n.date, true)}</h3>
+      <label>Texto <textarea name="text" rows="3" maxlength="300" required>${esc(n.text)}</textarea></label>
+      <label class="check"><input type="checkbox" name="share" ${n.approved ? 'checked' : ''}> visível para a cozinha (sem o autor)</label>
+      <div class="row spread"><button type="button" class="danger" id="b-delnote">Apagar</button>
+        <span class="row"><button type="button" data-close>Cancelar</button><button class="primary" type="submit">Salvar</button></span></div></form>`, (root) => {
+    const f = $('#f-enote', root);
+    $('#b-delnote', root).addEventListener('click', (e) => {
+      if (!confirm('Apagar esta observação?')) return;
+      guard(async () => { await api.deleteNote(n.personId, n.date, n.meal, n.kitchenId); dlg.close(); toast('Observação apagada.'); route(); }, e.target);
+    });
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      guard(async () => {
+        await api.saveNote({ ...n, text: f.text.value.trim() }, f.share.checked, n.kitchenId, S.user.uid);
+        dlg.close(); toast('Observação salva.'); route();
+      }, f.querySelector('[type=submit]'));
+    });
+  });
 }
 
 // ---------- Administrador: + pessoas e churrasco numa refeição ----------
@@ -442,7 +472,7 @@ function bindDayNoteDeletes(notes = []) {
 
 async function viewPainel() {
   const date = S.dashDate;
-  const { sum, notes, ovs, pers, events } = await daySummary(date);
+  const { sum, notes, ovs, pers, events, cnotes } = await daySummary(date);
   const general = notes.filter((n) => !n.meal);
   const alerts = isAdmin() || isKitchen() ? await api.listAlerts() : [];
   main.innerHTML = `
@@ -475,10 +505,13 @@ async function viewPainel() {
   $('#b-reload').addEventListener('click', () => route());
   $('#b-note')?.addEventListener('click', () => addDayNoteDialog(date));
   bindAlerts(alerts);
+  const noteById = (id) => cnotes.find((n) => n.id === id);
   $$('[data-approve]').forEach((b) => b.addEventListener('click', () => guard(async () => {
-    await api.approveNote(b.dataset.approve, b.dataset.v === '1');
-    toast(b.dataset.v === '1' ? 'Observação liberada para a cozinha.' : 'Observação ocultada da cozinha.'); route();
+    const n = noteById(b.dataset.approve);
+    await api.saveNote(n, b.dataset.v === '1', n.kitchenId, S.user.uid);
+    toast(b.dataset.v === '1' ? 'Observação liberada para a cozinha (sem o autor).' : 'Observação ocultada da cozinha.'); route();
   }, b)));
+  $$('[data-editnote]').forEach((b) => b.addEventListener('click', () => editNoteDialog(noteById(b.dataset.editnote))));
   $$('[data-plus]').forEach((b) => b.addEventListener('click', () => plusPeopleDialog(date, b.dataset.plus)));
   $$('[data-bbq]').forEach((b) => b.addEventListener('click', () => bbqDialog(date, b.dataset.bbq, events.find((e) => e.meal === b.dataset.bbq))));
   if (isAdmin()) {
@@ -511,13 +544,15 @@ async function viewPainel() {
 async function viewSemana() {
   const from = S.dashDate, to = L.addDays(from, 6);
   const [ovs0, pers, notes, events, cnotes] = await Promise.all([api.listOverridesRange(from, to), api.listPeriodsFrom(from),
-    api.listDayNotes(from, to), api.listEvents(from, to), api.listNotes(from, to, !isAdmin())]);
-  const ovs = L.mergeNotes(ovs0, cnotes);
+    api.listDayNotes(from, to), api.listEvents(from, to),
+    isAdmin() ? api.listNotes(from, to) : api.listKitchenNotes(from, to)]);
+  const ovs = L.mergeNotes(ovs0, isAdmin() ? cnotes : []);
   const rows = [];
   for (let i = 0; i < 7; i++) {
     const d = L.addDays(from, i);
     const dn = notes.filter((n) => n.date === d);
-    const sum = L.applyEvents(L.applyDayNotes(L.summarize(S.people, d, pers, ovs, S.settings), dn), events.filter((e) => e.date === d));
+    const sum = L.applyKitchenNotes(L.applyEvents(L.applyDayNotes(L.summarize(S.people, d, pers, ovs, S.settings), dn), events.filter((e) => e.date === d)),
+      isAdmin() ? [] : cnotes.filter((n) => n.date === d));
     const cells = L.MEALS.map((m) => {
       const s = sum[m];
       const extra = [];
@@ -525,7 +560,8 @@ async function viewSemana() {
       if (s.early.length) extra.push(`${s.early.length} +cedo`);
       if (s.late.length) extra.push(`${s.late.length} +tarde`);
       if (s.takeaway.length) extra.push(`${s.takeaway.length} levar`);
-      if (s.notes.length) extra.push(`${s.notes.length} obs.`);
+      const nobs = s.notes.length + (s.anonNotes?.length || 0);
+      if (nobs) extra.push(`${nobs} obs.`);
       if (s.extras) extra.push(`${s.extras} extra${s.extras > 1 ? 's' : ''}`);
       const abs = s.dietAbsent.length ? `<div class="small" style="color:var(--warn)">regime fora: ${s.dietAbsent.map((x) => esc(x.initials)).join(' ')}</div>` : '';
       return `<td><span class="num">${s.total}</span> <span class="muted small">(${s.diet} reg.)</span>
@@ -643,8 +679,8 @@ function editMeal(person, date, meal, pers, ovMap) {
           <input type="time" name="time" value="${esc(cur.time)}"></label>
       </fieldset>
       <label>Observação <input name="note" maxlength="140" value="${esc(cur.note)}" placeholder="ex.: jantar +leve"></label>
-      ${isAdmin() ? `<label class="check"><input type="checkbox" name="share" ${cur.noteId ? (cur.noteApproved ? 'checked' : '') : 'checked'}> observação visível para a cozinha</label>`
-        : '<p class="muted small">🔒 A observação vai para o administrador; a cozinha só a vê se ele liberar.</p>'}
+      ${isAdmin() ? `<label class="check"><input type="checkbox" name="share" ${cur.noteId ? (cur.noteApproved ? 'checked' : '') : 'checked'}> observação visível para a cozinha (sem o autor)</label>`
+        : '<p class="muted small">🔒 A observação vai para o administrador; a cozinha só a vê se ele liberar, e sem o seu nome.</p>'}
       <div class="row small">${['+leve', 'lanche para levar', 'guardar um prato'].map((n) => `<button type="button" class="link" data-note="${n}">${n}</button>`).join('')}</div>
       <div class="row spread">
         ${cur.source === 'pontual' || cur.noteId ? '<button type="button" id="b-reset">Voltar ao padrão</button>' : '<span></span>'}
@@ -665,7 +701,7 @@ function editMeal(person, date, meal, pers, ovMap) {
     }));
     $('#b-reset', root)?.addEventListener('click', (e) => guard(async () => {
       await api.deleteOverride(person.id, date, meal);
-      if (cur.noteId) await api.deleteNote(person.id, date, meal);
+      if (cur.noteId) await api.deleteNote(person.id, date, meal, cur.noteKitchenId);
       const alerted = await afterSave(null);
       dlg.close(); toast(alerted ? 'Voltou ao padrão — a cozinha foi alertada.' : 'Voltou ao padrão.'); route();
     }, e.target));
@@ -681,9 +717,9 @@ function editMeal(person, date, meal, pers, ovMap) {
         const ov = { personId: person.id, date, meal, status: on ? 'on' : 'off', when, time };
         if (same) { if (cur.source === 'pontual') await api.deleteOverride(person.id, date, meal); }
         else await api.setOverride(ov, S.user.uid);
-        if (!note) { if (cur.noteId) await api.deleteNote(person.id, date, meal); }
+        if (!note) { if (cur.noteId) await api.deleteNote(person.id, date, meal, cur.noteKitchenId); }
         else if (note !== cur.note || (isAdmin() && share !== cur.noteApproved)) {
-          await api.setNote({ personId: person.id, date, meal, text: note, approved: share }, S.user.uid);
+          await api.saveNote({ personId: person.id, date, meal, text: note }, share, cur.noteKitchenId, S.user.uid);
         }
         const alerted = await afterSave(same ? null : ov);
         dlg.close(); toast(alerted ? 'Salvo — a cozinha foi alertada da mudança.' : 'Salvo.'); route();
