@@ -45,6 +45,14 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 - Se o comensal editar ou apagar a observação, a cópia da cozinha é apagada e ela volta a ficar oculta.
 - Os alertas de mudança tardia não incluem o texto das observações. O churrasco só aparece nos almoços de sáb/dom.
 
+## Navegação, limite para se incluir e panorama
+
+- **Painel e Semana:** no celular, deslize o dedo para a esquerda/direita para ir ao dia/semana seguinte/anterior.
+- **Incluir-se numa refeição** (quem não faria): até **1 hora antes do horário normal** da refeição
+  (Configurações → Horários: café 7h30, almoço 12h30, jantar 19h30 por padrão). Depois disso, só o administrador.
+- **Pessoas → Panorama** (administrador): viagens/ausências, outras regras temporárias e aniversários do período,
+  e um mapa de presença (refeições por dia; ✈ = ausência) para os próximos 7, 14 ou 30 dias.
+
 ## Chamar o administrador
 
 No painel da cozinha (administradora e auxiliares), o botão **🔔 Chamar o administrador** registra um chamado

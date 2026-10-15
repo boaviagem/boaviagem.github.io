@@ -178,5 +178,18 @@ assert.equal(sk.jantar.anonNotes.length, 1);
 assert.equal(sk.almoco.anonNotes.length, 0);
 assert.equal(sk.jantar.anonNotes[0].personId, undefined);
 
+// Limite para se incluir: 1 h antes do horário normal (padrão almoço 12:30 → 11:30)
+assert.equal(L.addLimitOf('2026-10-13', 'almoco', {}), '2026-10-13 11:30');
+assert.equal(L.canAdd('2026-10-13', 'almoco', {}, at('2026-10-13', '11:29')), true);
+assert.equal(L.canAdd('2026-10-13', 'almoco', {}, at('2026-10-13', '11:30')), false);
+assert.equal(L.addLimitOf('2026-10-13', 'jantar', { normal: { jantar: '20:00' } }), '2026-10-13 19:00');
+// Panorama
+const tripP = { personId: 'rl', from: '2026-10-13', to: '2026-10-14', grid: L.emptyGrid(), createdAt: 9 };
+const pres = L.presence(rl, ['2026-10-12', '2026-10-13'], [tripP], null, {});
+assert.equal(pres[0].count, 3); assert.equal(pres[0].away, false);
+assert.equal(pres[1].count, 0); assert.equal(pres[1].away, true);
+assert.equal(L.periodsInRange([tripP], '2026-10-15', '2026-10-20').length, 0);
+assert.equal(L.periodsInRange([tripP, rep], '2026-10-25', '2026-11-02').length, 1); // só a repetição do MB
+
 console.log('OK — todos os testes passaram');
 export default 'OK';

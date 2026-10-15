@@ -163,6 +163,15 @@ details.diets ul { margin-top: 8px; }
 .callbar button { background: #fff; color: var(--warn); border: 0; font-weight: 700; }
 .callcard { border-left: 4px solid var(--warn); }
 
+/* Panorama */
+.panorama td.pc { min-width: 26px; font-weight: 700; }
+.panorama td.c3 { background: var(--accent-soft); color: var(--accent); }
+.panorama td.c2, .panorama td.c1 { background: var(--info-soft); color: var(--info); }
+.panorama td.c0 { color: var(--off); }
+.panorama td.away { background: var(--warn-soft); color: var(--warn); }
+.panorama th.wk { color: var(--warn); }
+.panorama tbody td:nth-child(3n+2) { border-left: 0; }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }

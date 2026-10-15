@@ -144,11 +144,34 @@ function renderNav() {
 
 window.addEventListener('hashchange', () => { if (S.role) route(); });
 
+// Deslizar o dedo para a esquerda/direita: próximo/anterior (painel e semana)
+(() => {
+  let x0 = null, y0 = 0, t0 = 0, scroller = null, sl0 = 0;
+  // tabela larga que rola para os lados: se ela rolou, o gesto era para rolar, não para mudar de dia
+  const sideScroller = (el) => {
+    for (; el && el !== main; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 2 && getComputedStyle(el).overflowX !== 'visible') return el;
+    return null;
+  };
+  main.addEventListener('touchstart', (e) => {
+    if (!S.swipe || e.touches.length !== 1 || dlg.open) { x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+    scroller = sideScroller(e.target); sl0 = scroller?.scrollLeft || 0;
+  }, { passive: true });
+  main.addEventListener('touchend', (e) => {
+    if (x0 === null || !S.swipe) return;
+    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    if (scroller && Math.abs(scroller.scrollLeft - sl0) > 2) return;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < Math.abs(dx) * 0.6 && Date.now() - t0 < 800) S.swipe(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
 async function route() {
   const allowed = navFor().map(([k]) => k);
   let v = location.hash.replace(/^#\/?/, '');
   if (!allowed.includes(v)) v = allowed[0];
   S.view = v;
+  S.swipe = null; // cada tela define, se quiser, o que fazer ao deslizar o dedo
   $$('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.k === v));
   main.innerHTML = loading;
   try { await VIEWS[v](); } catch (e) { console.error(e); main.innerHTML = `<div class="card">Erro: ${esc(errMsg(e))}</div>`; }
@@ -566,6 +589,7 @@ async function viewPainel() {
     const n = Number(b.dataset.go);
     S.dashDate = n === 0 ? L.today() : L.addDays(date, n); route();
   }));
+  S.swipe = (dir) => { S.dashDate = L.addDays(date, dir); route(); };
   $('#dash-date').addEventListener('change', (e) => { if (e.target.value) { S.dashDate = e.target.value; route(); } });
   $('#b-reload').addEventListener('click', () => route());
   $('#b-note')?.addEventListener('click', () => addDayNoteDialog(date));
@@ -646,8 +670,9 @@ async function viewSemana() {
     <div class="card tablewrap"><table>
       <thead><tr><th>Dia</th>${L.MEALS.map((m) => `<th>${L.MEAL_SHORT[m]}</th>`).join('')}</tr></thead>
       <tbody>${rows.join('')}</tbody></table>
-      <p class="muted small">Toque num dia para ver os detalhes.</p></div>`;
+      <p class="muted small">Toque num dia para ver os detalhes. No celular, deslize para os lados para mudar de semana.</p></div>`;
   $$('[data-go]').forEach((b) => b.addEventListener('click', () => { S.dashDate = L.addDays(from, Number(b.dataset.go)); route(); }));
+  S.swipe = (dir) => { S.dashDate = L.addDays(from, 7 * dir); route(); };
   $$('tr[data-d]').forEach((tr) => tr.addEventListener('click', () => { S.dashDate = tr.dataset.d; location.hash = '#/painel'; }));
 }
 
@@ -716,6 +741,8 @@ function editMeal(person, date, meal, pers, ovMap) {
       <div class="row spread"><span></span><button type="button" data-close>Fechar</button></div></div>`);
     return;
   }
+  // Quem não faria a refeição só pode se incluir até 1 h antes do horário normal (o administrador pode sempre)
+  const addBlocked = !isAdmin() && !cur.on && !L.canAdd(date, meal, S.settings);
   const warn = status === 'late'
     ? `<p class="alert small">⚠ Já passou o horário de avisar os comensais à cozinha (${L.fmtDeadline(date, meal, S.settings)}).
         Se mudar agora, a cozinha receberá um alerta desta mudança.</p>`
@@ -738,7 +765,10 @@ function editMeal(person, date, meal, pers, ovMap) {
       <h3>${isAdmin() ? esc(person.initials) + ' · ' : ''}${L.MEAL_LABEL[meal]} — ${L.fmtDate(date, true)}</h3>
       ${warn}
       <p class="muted small">Padrão: ${base.on ? 'faz' + (base.when !== 'N' ? ` (${L.WHEN_LABEL[base.when]} ${base.timeShown})` : '') : 'não faz'}${base.source === 'temporária' ? ' (regra temporária)' : ''}.</p>
-      <div class="seg">${radio('on', '1', 'Vou', cur.on)}${radio('on', '0', 'Não vou', !cur.on)}</div>
+      ${addBlocked ? `<p class="alert small">⏰ Já passou o horário-limite para se incluir nesta refeição
+          (${L.addLimitOf(date, meal, S.settings).slice(11).replace(':', 'h')}, 1 hora antes). Fale com o administrador.</p>`
+        : !cur.on && !isAdmin() ? `<p class="muted small">Para se incluir, o limite é ${L.addLimitOf(date, meal, S.settings).slice(11).replace(':', 'h')} (1 hora antes).</p>` : ''}
+      <div class="seg">${radio('on', '1', 'Vou', cur.on).replace('<input', addBlocked ? '<input disabled' : '<input')}${radio('on', '0', 'Não vou', !cur.on)}</div>
       <fieldset id="whenbox"><legend>Horário</legend>
         <div class="seg">${['N', 'C', 'T', 'L'].map((w) => radio('when', w, { N: 'Normal', C: 'Mais cedo', T: 'Mais tarde', L: 'Para levar' }[w], cur.when === w)).join('')}</div>
         <label id="timebox" style="margin-top:8px">Horário <span id="timehint"></span>
@@ -774,6 +804,7 @@ function editMeal(person, date, meal, pers, ovMap) {
     f.addEventListener('submit', (e) => {
       e.preventDefault();
       const on = f.on.value === '1';
+      if (on && !cur.on && !isAdmin() && !L.canAdd(date, meal, S.settings)) return toast('Já passou o horário-limite para se incluir nesta refeição.');
       const when = on ? f.when.value || 'N' : 'N';
       const time = on && when !== 'N' ? f.time.value : '';
       const note = f.note.value.trim();
@@ -963,10 +994,11 @@ async function viewTemporarias() {
 // ---------- Pessoas (admin) ----------
 async function viewPessoas() {
   await loadPeople();
-  const tabs = `<div class="row tabs">${[['cadastro', 'Cadastro'], ['geral', 'Visão geral das regras']].map(([k, l]) =>
+  const tabs = `<div class="row tabs">${[['cadastro', 'Cadastro'], ['panorama', 'Panorama'], ['geral', 'Visão geral das regras']].map(([k, l]) =>
     `<button data-tab="${k}" class="${(S.pessoasTab || 'cadastro') === k ? 'primary' : ''}">${l}</button>`).join('')}</div>`;
   const bindTabs = () => $$('[data-tab]').forEach((b) => b.addEventListener('click', () => { S.pessoasTab = b.dataset.tab; route(); }));
   if (S.pessoasTab === 'geral') { main.innerHTML = tabs + await overviewHtml(); bindTabs(); bindOverview(); return; }
+  if (S.pessoasTab === 'panorama') { main.innerHTML = tabs + await panoramaHtml(); bindTabs(); bindPanorama(); return; }
   S.users = await api.listUsers();
   const userOf = (uid) => S.users.find((u) => u.id === uid);
   const rows = S.people.map((p) => {
@@ -1007,6 +1039,42 @@ async function viewPessoas() {
     if (!confirm('Remover o acesso desta conta? (O login continua existindo no Firebase, mas não verá mais nada.)')) return;
     guard(async () => { await api.removeUserProfile(b.dataset.rmk); route(); }, b);
   }));
+}
+
+// Panorama (administrador): presença de cada pessoa dia a dia, ausências e regras temporárias do período
+async function panoramaHtml() {
+  const n = S.panoramaDays || 14, from = L.today(), to = L.addDays(from, n - 1);
+  const dates = Array.from({ length: n }, (_, i) => L.addDays(from, i));
+  const [ovs, pers] = await Promise.all([api.listOverridesRange(from, to), api.listPeriodsFrom(from)]);
+  const ovMap = L.overrideMap(ovs);
+  const people = S.people.filter((p) => p.active !== false);
+  const rows = people.map((p) => {
+    const pr = L.presence(p, dates, pers, ovMap, S.settings);
+    return `<tr data-pid="${p.id}" class="clickable"><th class="sticky" title="${esc(fullName(p.id))}">${esc(p.initials)}</th>${pr.map((x) =>
+      `<td class="pc c${x.count}${x.away ? ' away' : ''}" title="${esc(L.fmtDate(x.date))}: ${L.MEALS.map((m, i) => `${L.MEAL_SHORT[m]} ${x.meals[i] ? '✓' : '✗'}`).join(', ')}">${x.away ? '✈' : x.count || ''}</td>`).join('')}</tr>`;
+  }).join('');
+  const inRange = L.periodsInRange(pers, from, to).sort((a, b) => a.from.localeCompare(b.from));
+  const who = (pid) => { const p = personById(pid); return p ? `<b>${esc(p.initials)}</b> ${esc(fullName(pid))}` : '?'; };
+  const now = (p) => L.occursOn(p, from) ? ' <span class="badge bbq">agora</span>' : '';
+  const absences = inRange.filter((p) => L.isAbsentGrid(p.grid) && personById(p.personId)?.active !== false);
+  const others = inRange.filter((p) => !L.isAbsentGrid(p.grid) && personById(p.personId)?.active !== false);
+  const item = (p) => `<li>${who(p.personId)} — ${esc(p.label || (p.repeat ? 'Todo mês' : 'Ausência'))}: ${esc(L.describePeriod(p))}${now(p)}</li>`;
+  const bdays = L.birthdaysBetween(S.people, from, n);
+  return `<div class="card row"><label>Período <select id="pan-days">${[[7, 'Próximos 7 dias'], [14, 'Próximos 14 dias'], [30, 'Próximos 30 dias']]
+      .map(([v, l]) => `<option value="${v}" ${v === n ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <div class="card"><h2>✈ Viagens e ausências</h2>${absences.length ? `<ul class="notes">${absences.map(item).join('')}</ul>` : '<p class="muted">Ninguém ausente no período.</p>'}</div>
+    ${others.length ? `<div class="card"><h2>Outras regras temporárias</h2><ul class="notes">${others.map(item).join('')}</ul></div>` : ''}
+    ${bdays.length ? `<div class="card"><h2>🎂 Aniversários</h2><ul class="notes">${bdays.map((x) => `<li>${who(x.person.id)} — ${L.fmtDate(x.date)}</li>`).join('')}</ul></div>` : ''}
+    <div class="card"><h2>Presença dia a dia</h2>
+      <p class="muted small">Número de refeições que cada um faz no dia (já com regras temporárias e alterações). ✈ = ausência.
+        Toque numa linha para ver as refeições da pessoa.</p>
+      <div class="tablewrap"><table class="overview panorama">
+        <thead><tr><th class="sticky"></th>${dates.map((d) => `<th class="${[0, 6].includes(L.weekday(d)) ? 'wk' : ''}">${L.DOW[L.weekday(d)].slice(0, 1)}<br>${d.slice(8)}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody></table></div></div>`;
+}
+function bindPanorama() {
+  $('#pan-days').addEventListener('change', (e) => { S.panoramaDays = Number(e.target.value); route(); });
+  $$('.panorama tr[data-pid]').forEach((tr) => tr.addEventListener('click', () => { S.targetPid = tr.dataset.pid; location.hash = '#/minhas'; }));
 }
 
 // Visão geral (administrador): regra padrão de todos + temporárias em vigor
@@ -1141,12 +1209,14 @@ function personForm(p) {
 async function viewConfig() {
   const s = S.settings;
   const row = (m) => `<tr><th>${L.MEAL_SHORT[m]}</th>
+    <td><input type="time" name="normal_${m}" value="${esc(s.normal[m])}" required></td>
     <td><input type="time" name="early_${m}" value="${esc(s.early[m])}"></td>
     <td><input type="time" name="late_${m}" value="${esc(s.late[m])}"></td></tr>`;
   main.innerHTML = `<form class="card stack" id="f-cfg">
       <h2>Horários padrão</h2>
-      <p class="muted small">Usados quando alguém marca +cedo ou +tarde sem informar o horário.</p>
-      <div class="tablewrap"><table><thead><tr><th></th><th>+cedo</th><th>+tarde</th></tr></thead>
+      <p class="muted small">Normal: horário de cada refeição (quem não faria a refeição pode se incluir até 1 hora antes).
+        +cedo/+tarde: usados quando alguém marca sem informar o horário.</p>
+      <div class="tablewrap"><table><thead><tr><th></th><th>Normal</th><th>+cedo</th><th>+tarde</th></tr></thead>
         <tbody>${L.MEALS.map(row).join('')}</tbody></table></div>
       <h2>Prazo para mudanças</h2>
       <label>Horário-limite no dia do aviso à cozinha <input type="time" name="deadline" value="${esc(s.deadline)}" required></label>
@@ -1157,8 +1227,10 @@ async function viewConfig() {
   const f = $('#f-cfg');
   f.addEventListener('submit', (e) => {
     e.preventDefault();
-    const ns = { early: {}, late: {}, deadline: f.deadline.value || '08:15' };
-    for (const m of L.MEALS) { ns.early[m] = f[`early_${m}`].value; ns.late[m] = f[`late_${m}`].value; }
+    const ns = { early: {}, late: {}, normal: {}, deadline: f.deadline.value || '08:15' };
+    for (const m of L.MEALS) {
+      ns.early[m] = f[`early_${m}`].value; ns.late[m] = f[`late_${m}`].value; ns.normal[m] = f[`normal_${m}`].value || L.DEFAULT_SETTINGS.normal[m];
+    }
     guard(async () => { await api.saveSettings(ns); S.settings = L.mergeSettings(ns); toast('Configurações salvas.'); }, f.querySelector('button'));
   });
   $('#b-demo-reset')?.addEventListener('click', () => { api.reset(); location.reload(); });

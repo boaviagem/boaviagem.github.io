@@ -14,6 +14,7 @@ export const DEFAULT_SETTINGS = {
   late: { cafe: '', almoco: '14:00', jantar: '21:00' },
   early: { cafe: '', almoco: '', jantar: '' },
   deadline: '08:15', // horário-limite para mudanças, no dia em que a cozinha é avisada
+  normal: { cafe: '07:30', almoco: '12:30', jantar: '19:30' }, // horário normal (limite para se incluir = 1 h antes)
 };
 
 export function mergeSettings(s) {
@@ -22,6 +23,7 @@ export function mergeSettings(s) {
     late: { ...DEFAULT_SETTINGS.late, ...(s.late || {}) },
     early: { ...DEFAULT_SETTINGS.early, ...(s.early || {}) },
     deadline: s.deadline || DEFAULT_SETTINGS.deadline,
+    normal: { ...DEFAULT_SETTINGS.normal, ...(s.normal || {}) },
   };
 }
 
@@ -444,4 +446,33 @@ export function birthdaysBetween(people, from, days) {
 export function applyKitchenNotes(summary, knotes) {
   for (const m of MEALS) summary[m].anonNotes = (knotes || []).filter((n) => n.meal === m);
   return summary;
+}
+
+// ---------- Limite para se incluir numa refeição: 1 hora antes do horário normal ----------
+export const ADD_LIMIT_MIN = 60;
+export function addLimitOf(date, meal, settings) {
+  const [h, m] = mergeSettings(settings).normal[meal].split(':').map(Number);
+  const t = Math.max(0, h * 60 + m - ADD_LIMIT_MIN);
+  return `${date} ${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+export const canAdd = (date, meal, settings, now = new Date()) => nowStamp(now) < addLimitOf(date, meal, settings);
+
+// ---------- Panorama: presença de cada pessoa por dia ----------
+export const isAbsentGrid = (g) => MEALS.every((m) => [0, 1, 2, 3, 4, 5, 6].every((d) => !g?.[d]?.[m]));
+// Para cada dia: quantas refeições faz e se está numa ausência (período sem refeições)
+export function presence(person, dates, periods, ovMap, settings) {
+  return dates.map((date) => {
+    const meals = MEALS.map((m) => resolve(person, date, m, periods, ovMap, settings).on);
+    const away = MEALS.some((m) => { const p = activePeriod(periods, person.id, date, m); return p && isAbsentGrid(p.grid); });
+    return { date, meals, count: meals.filter(Boolean).length, away };
+  });
+}
+// Períodos (únicos ou mensais) que têm ocorrência entre from e to
+export function periodsInRange(periods, from, to) {
+  return (periods || []).filter((p) => {
+    if (p.from > to || (p.to || NO_END) < from) return false;
+    if (!p.repeat) return true;
+    for (let d = from; d <= to; d = addDays(d, 1)) if (occursOn(p, d)) return true;
+    return false;
+  });
 }
