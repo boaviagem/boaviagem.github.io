@@ -130,6 +130,7 @@ export function createDemoApi() {
     },
     listAuxiliaries: async () => later(list(st.users).filter((u) => u.role === 'auxiliar')),
     async removeUserProfile(u) { delete st.users[u]; save(); },
+    async setUserRole(u, role) { st.users[u].role = role; save(); },
     async deletePerson(pid, u) {
       for (const [k, o] of Object.entries(st.overrides)) if (o.personId === pid) delete st.overrides[k];
       for (const [k, o] of Object.entries(st.periods)) if (o.personId === pid) delete st.periods[k];

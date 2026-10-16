@@ -110,6 +110,7 @@ export function createFirebaseApi(config) {
     },
     listAuxiliaries: async () => rows(await getDocs(query(col('users'), where('role', '==', 'auxiliar')))),
     removeUserProfile: (uid) => deleteDoc(d('users', uid)),
+    setUserRole: (uid, role) => updateDoc(d('users', uid), { role }),
     // Apaga o comensal e tudo dele (regras, alterações, acesso). O login em si só sai pelo console do Firebase.
     async deletePerson(pid, uid) {
       const [ovs, pers] = await Promise.all([

@@ -1056,8 +1056,10 @@ async function viewPessoas() {
       <button data-edit="${p.id}">Editar</button></div>`;
   }).join('');
   const kitchens = S.users.filter((u) => isKitchenRole(u.role) || (u.role === 'cl' && !u.personId)).map((u) => `<div class="list-item">
-      <span>${esc(u.email)}<br><span class="small muted">${ROLE_NAME[u.role]}</span></span>
-      <button class="danger" data-rmk="${u.id}">Remover acesso</button></div>`).join('');
+      <span>${esc(u.email)}</span>
+      <span class="row"><select data-role-uid="${u.id}" aria-label="Tipo de conta">${['cozinha', 'auxiliar', 'cl'].map((r) =>
+        `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_NAME[r]}</option>`).join('')}</select>
+      <button class="danger" data-rmk="${u.id}">Remover acesso</button></span></div>`).join('');
   main.innerHTML = `${tabs}
     <div class="card"><div class="row spread"><h2>Comensais</h2>
       <span class="row"><button id="b-import">Importar planilha</button><button class="primary" id="b-add">+ Adicionar</button></span></div>
@@ -1088,6 +1090,11 @@ async function viewPessoas() {
       toast(`Conta (${ROLE_NAME[fk.role.value]}) criada.`); route();
     });
   });
+  $$('[data-role-uid]').forEach((sel) => sel.addEventListener('change', () => {
+    const u = S.users.find((x) => x.id === sel.dataset.roleUid);
+    if (!confirm(`Mudar ${u.email} para “${ROLE_NAME[sel.value]}”?`)) { sel.value = u.role; return; }
+    guard(async () => { await api.setUserRole(u.id, sel.value); toast(`${u.email} agora é ${ROLE_NAME[sel.value]}.`); route(); }, sel);
+  }));
   $$('[data-rmk]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm('Remover o acesso desta conta? (O login continua existindo no Firebase, mas não verá mais nada.)')) return;
     guard(async () => { await api.removeUserProfile(b.dataset.rmk); route(); }, b);
