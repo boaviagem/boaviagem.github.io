@@ -54,7 +54,7 @@ function seed() {
       { total: r(k), diet: 3 + (i % 2), early: (i + k) % 3 === 0 ? 1 : 0, late: k === 2 ? 1 : 0, takeaway: 0, extras: 0 }])) };
   }
   const events = {}, alerts = {};
-  const houses = { ccbv: { name: 'CCBV (demo)', createdAt: 1 }, outra: { name: 'Outra casa (demo)', createdAt: 2 } };
+  const houses = { ccbv: { name: 'CCBV (demo)', createdAt: 1 }, outra: { name: 'Outro centro (demo)', createdAt: 2 } };
   return { users, people, names, overrides, periods, dayNotes, messages, daily, events, alerts, houses, settings: { app: L.mergeSettings({}) }, bootstrap: true };
 }
 

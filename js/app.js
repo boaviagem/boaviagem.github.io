@@ -123,7 +123,7 @@ function dailyCleanup() {
 
 function renderNoHouse() {
   main.innerHTML = `<div class="card login stack">
-    <p>A conta <b>${esc(S.user.email)}</b> ainda não está ligada a nenhuma casa. Fale com o CL da sua casa.</p>
+    <p>A conta <b>${esc(S.user.email)}</b> ainda não está ligada a nenhum centro. Fale com o CL do seu centro.</p>
     <button id="b-out">Sair</button></div>`;
   $('#b-out').addEventListener('click', () => api.signOut());
 }
@@ -160,9 +160,9 @@ const NAV = {
   comensal: [['minhas', 'Minhas refeições'], ['padrao', 'Regra padrão'], ['temporarias', 'Temporárias'], ['conta', 'Conta']],
 };
 const navFor = () => {
-  if (!S.role) return [['casas', 'Casas'], ['conta', 'Conta']]; // gestor sem casa
+  if (!S.role) return [['casas', 'Centros'], ['conta', 'Conta']]; // gestor sem casa
   const base = NAV[S.role] || NAV.comensal;
-  return S.isGestor ? [...base.slice(0, -1), ['casas', 'Casas'], base[base.length - 1]] : base;
+  return S.isGestor ? [...base.slice(0, -1), ['casas', 'Centros'], base[base.length - 1]] : base;
 };
 
 function renderNav() {
@@ -225,7 +225,7 @@ function renderLogin() {
       <button data-who="u-cozinha">Administradora (cozinha)</button>
       <button data-who="u-aux">Numerária Auxiliar (cozinha)</button>
       <button data-who="u-cl">CL (RV)</button>
-      <button data-who="u-cl2">CL de outra casa</button>
+      <button data-who="u-cl2">CL de outro centro</button>
     </div>`;
     $$('[data-who]').forEach((b) => b.addEventListener('click', () => api.signIn(b.dataset.who)));
     return;
@@ -251,7 +251,7 @@ function renderLogin() {
 function renderBootstrap() {
   main.innerHTML = `<div class="card login stack">
     <h2>Primeiro acesso</h2>
-    <p>Instalação nova. Tornar <b>${esc(S.user.email)}</b> o gestor geral e CL da casa principal?</p>
+    <p>Instalação nova. Tornar <b>${esc(S.user.email)}</b> o gestor geral e CL do centro principal?</p>
     <button class="primary" id="b-boot">Sim, sou o gestor</button>
     <button id="b-out">Sair</button></div>`;
   $('#b-boot').addEventListener('click', (e) => guard(async () => {
@@ -285,7 +285,7 @@ function renderMustChange() {
 
 function renderNoProfile() {
   main.innerHTML = `<div class="card login stack">
-    <p>A conta <b>${esc(S.user.email)}</b> ainda não foi liberada pelo CL da casa.</p>
+    <p>A conta <b>${esc(S.user.email)}</b> ainda não foi liberada pelo CL do centro.</p>
     <button id="b-out">Sair</button></div>`;
   $('#b-out').addEventListener('click', () => api.signOut());
 }
@@ -1098,7 +1098,7 @@ async function viewPessoas() {
     <div class="card"><h2>Cozinha e CL</h2>
       <p class="muted small"><b>Administradora</b> (cozinha): vê totais, horários, regimes e observações, só com iniciais; cria contas de
         Numerárias Auxiliares e troca mensagens com você. <b>Numerária Auxiliar</b>: mesma visão, sem criar contas nem mandar mensagens.
-        <b>CL</b>: administra a casa (mesmos poderes que você). Se o membro do CL também for comensal, dê o papel “CL”
+        <b>CL</b>: administra o centro (mesmos poderes que você). Se o membro do CL também for comensal, dê o papel “CL”
         no cadastro dele (Editar); aqui aparecem só os CLs sem cadastro de comensal.</p>
       ${kitchens || '<p class="muted">Nenhuma conta.</p>'}
       <form id="f-k" class="stack" style="margin-top:10px"><h3>Criar conta</h3>
@@ -1681,29 +1681,29 @@ async function viewCasas() {
   const admins = await Promise.all(houses.map((h) => api.listHouseAdmins(h.id)));
   const slug = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
   main.innerHTML = `
-    <div class="card"><h2>Casas</h2>
-      <p class="muted small">Como gestor geral, você cria as casas e as contas de CL. Os dados de cada casa (comensais,
-        refeições, mensagens) só são vistos por quem é da casa — você vê os da sua casa por ser CL dela.</p></div>
+    <div class="card"><h2>Centros</h2>
+      <p class="muted small">Como gestor geral, você cria os centros e as contas de CL. Os dados de cada centro (comensais,
+        refeições, mensagens) só são vistos por quem é do centro — você vê os do seu centro por ser CL dele.</p></div>
     ${houses.map((h, i) => `<div class="card">
       <div class="row spread"><div><b>${esc(h.name || h.id)}</b> <span class="muted small">(${esc(h.id)})</span>
-        ${h.id === S.houseId ? ' <span class="badge plus">sua casa</span>' : ''}</div>
+        ${h.id === S.houseId ? ' <span class="badge plus">seu centro</span>' : ''}</div>
         <button class="link small" data-rename="${h.id}">renomear</button></div>
       <div class="sub">CLs</div>
       ${admins[i].map((u) => `<div class="list-item"><span>${esc(u.email)}${u.id === S.user.uid ? ' <span class="muted small">(você)</span>' : ''}</span>
         ${u.id === S.user.uid ? '' : `<button class="danger small" data-rmcl="${u.id}" data-email="${esc(u.email)}">Remover acesso</button>`}</div>`).join('')
         || '<p class="muted small">Nenhum CL ainda.</p>'}
-      <details style="margin-top:8px"><summary class="small">+ Novo CL desta casa</summary>
+      <details style="margin-top:8px"><summary class="small">+ Novo CL deste centro</summary>
         <form class="stack f-cl" data-house="${h.id}" style="margin-top:8px">${accountFields()}
           <p class="alert small" hidden></p><button type="submit">Criar conta de CL</button></form></details>
     </div>`).join('')}
-    <form class="card stack" id="f-house"><h2>Nova casa</h2>
-      <label>Nome <input name="hname" required maxlength="60" placeholder="ex.: Residência Ipê"></label>
+    <form class="card stack" id="f-house"><h2>Novo centro</h2>
+      <label>Nome <input name="hname" required maxlength="60" placeholder="ex.: Centro Ipê"></label>
       <label>Identificador (letras minúsculas, números e hífen) <input name="hid" required pattern="[a-z0-9\\-]{2,30}" placeholder="ex.: ipe"></label>
-      <p class="muted small">Depois de criar a casa, crie a conta do primeiro CL; ele faz o resto (importa a planilha, cria a cozinha…).</p>
-      <div class="row"><button class="primary" type="submit">Criar casa</button></div></form>
+      <p class="muted small">Depois de criar o centro, crie a conta do primeiro CL; ele faz o resto (importa a planilha, cria a cozinha…).</p>
+      <div class="row"><button class="primary" type="submit">Criar centro</button></div></form>
     ${houses.length ? `<div class="card stack"><h2>Migração do formato antigo</h2>
-      <p class="muted small">Uma vez só, na passagem para várias casas: copia os dados da versão anterior do app (que ficavam
-        fora das casas) para a casa escolhida e liga a ela todas as contas antigas. Os dados antigos não são apagados.</p>
+      <p class="muted small">Uma vez só, na passagem para vários centros: copia os dados da versão anterior do app (que ficavam
+        fora dos centros) para o centro escolhido e liga a ele todas as contas antigas. Os dados antigos não são apagados.</p>
       <div class="row"><select id="mig-house">${houses.map((h) => `<option value="${h.id}" ${h.id === S.houseId ? 'selected' : ''}>${esc(h.name || h.id)}</option>`).join('')}</select>
         <button id="b-mig">Migrar dados antigos</button></div>
       <pre id="mig-log" class="small" hidden></pre></div>` : ''}`;
@@ -1714,10 +1714,10 @@ async function viewCasas() {
   fh.addEventListener('submit', (e) => {
     e.preventDefault();
     const id = slug(fh.hid.value);
-    if (houses.some((h) => h.id === id)) return toast('Já existe uma casa com esse identificador.');
+    if (houses.some((h) => h.id === id)) return toast('Já existe um centro com esse identificador.');
     guard(async () => {
       await api.createHouse(id, fh.hname.value.trim());
-      toast('Casa criada.');
+      toast('Centro criado.');
       if (id === S.houseId && !S.house) { await loadSession(); }
       route();
     }, fh.querySelector('[type=submit]'));
@@ -1736,16 +1736,16 @@ async function viewCasas() {
   }));
   $$('[data-rename]').forEach((b) => b.addEventListener('click', () => {
     const h = houses.find((x) => x.id === b.dataset.rename);
-    const name = prompt('Novo nome da casa:', h.name || h.id);
+    const name = prompt('Novo nome do centro:', h.name || h.id);
     if (name && name.trim()) guard(async () => { await api.renameHouse(h.id, name.trim()); if (h.id === S.houseId) S.house.name = name.trim(); renderNav(); route(); }, b);
   }));
   $('#b-mig')?.addEventListener('click', (e) => {
     const h = $('#mig-house').value;
-    if (!confirm(`Copiar os dados antigos para a casa "${h}" e ligar a ela todas as contas sem casa? Faça isso uma vez só.`)) return;
+    if (!confirm(`Copiar os dados antigos para o centro "${h}" e ligar a ele todas as contas sem centro? Faça isso uma vez só.`)) return;
     const log = $('#mig-log'); log.hidden = false; log.textContent = 'Migrando…\n';
     guard(async () => {
       const out = await api.migrateLegacyInto(h, (t) => { log.textContent += t + '\n'; });
-      log.textContent += `\nConcluído. Contas ligadas à casa: ${out.users ?? 0}.\nRecarregando…`;
+      log.textContent += `\nConcluído. Contas ligadas ao centro: ${out.users ?? 0}.\nRecarregando…`;
       setTimeout(() => location.reload(), 2500);
     }, e.target);
   });

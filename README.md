@@ -53,12 +53,12 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 - **Pessoas → Panorama** (administrador): viagens/ausências, outras regras temporárias e aniversários do período,
   e um mapa de presença (refeições por dia; ✈ = ausência) para os próximos 7, 14 ou 30 dias.
 
-## Várias casas
+## Vários centros
 
-Cada casa é independente: seus dados ficam em `houses/{casa}/…` e só quem é da casa (`users.houseId`) tem acesso —
+Cada centro é independente: seus dados ficam em `houses/{casa}/…` e só quem é da casa (`users.houseId`) tem acesso —
 garantido pelas regras do Firestore. As contas (`users`) são comuns.
 
-- **Gestor geral** (`users.gestor = true`): na aba **Casas**, cria casas e as contas de CL de cada uma. Não lê os dados
+- **Gestor geral** (`users.gestor = true`): na aba **Centros**, cria centros e as contas de CL de cada uma. Não lê os dados
   internos das casas (só os da própria casa, se também for CL dela).
 - **CL** (`role: 'admin'`): administra a casa.
 - O CL apaga automaticamente, uma vez por dia, registros com mais de 45 dias (alterações, observações, recados, alertas,
