@@ -53,6 +53,18 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 - **Pessoas → Panorama** (administrador): viagens/ausências, outras regras temporárias e aniversários do período,
   e um mapa de presença (refeições por dia; ✈ = ausência) para os próximos 7, 14 ou 30 dias.
 
+## Papéis de conta
+
+| Papel (`users.role`) | Nome no app | O que faz |
+|---|---|---|
+| `admin` | Administrador | tudo |
+| `comensal` | Comensal | as próprias refeições |
+| `cozinha` | Administradora | painel/semana/estatísticas só com iniciais; cria Numerárias Auxiliares; mensagens |
+| `auxiliar` | Numerária Auxiliar | mesma visão da Administradora, sem criar contas nem mandar mensagens |
+| `cl` | CL | painel, semana e panorama **com nomes**; mensagens como administração (pode também ser comensal) |
+
+Mensagens: cada mensagem pode ser respondida (`replyTo`), formando conversas.
+
 ## Chamar o administrador
 
 No painel da cozinha (administradora e auxiliares), o botão **🔔 Chamar o administrador** registra um chamado

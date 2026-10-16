@@ -27,6 +27,7 @@ function seed() {
     'u-gn': { role: 'comensal', personId: 'gn', email: 'gn@demo' },
     'u-cozinha': { role: 'cozinha', personId: null, email: 'cozinha@demo' },
     'u-aux': { role: 'auxiliar', personId: null, email: 'auxiliar@demo' },
+    'u-cl': { role: 'cl', personId: 'rv', email: 'cl@demo' },
   };
   const t = L.today();
   const overrides = {
@@ -123,7 +124,10 @@ export function createDemoApi() {
       const u = 'u-' + pid; st.users[u] = { role, personId: pid, email };
       st.people[pid].uid = u; (st.names[pid] ||= {}).email = email; save();
     },
-    async createKitchen(email, pw, role = 'cozinha') { st.users['u-' + uid()] = { role, personId: null, email }; save(); },
+    async createKitchen(email, pw, role = 'cozinha') {
+      if (Object.values(st.users).some((x) => x.email === email)) throw Object.assign(new Error('e-mail em uso'), { code: 'auth/email-already-in-use' });
+      st.users['u-' + uid()] = { role, personId: null, email }; save();
+    },
     listAuxiliaries: async () => later(list(st.users).filter((u) => u.role === 'auxiliar')),
     async removeUserProfile(u) { delete st.users[u]; save(); },
     async deletePerson(pid, u) {
@@ -171,6 +175,7 @@ export function createDemoApi() {
     listPeriodsFrom: async (from) => later(list(st.periods).filter((p) => p.to >= from)),
     listPeriodsByPerson: async (pid) => later(list(st.periods).filter((p) => p.personId === pid)),
     async addPeriod(p) { st.periods[uid()] = { ...structuredClone(p), createdAt: Date.now() }; save(); },
+    async updatePeriod(id, data) { Object.assign(st.periods[id], structuredClone(data)); save(); },
     async deletePeriod(id) { delete st.periods[id]; save(); },
 
     listDayNotes: async (from, to) => later(list(st.dayNotes).filter((n) => n.date >= from && n.date <= to)),
@@ -178,7 +183,7 @@ export function createDemoApi() {
     async deleteDayNote(id) { delete st.dayNotes[id]; save(); },
 
     listMessages: async () => later(list(st.messages).sort((a, b) => b.createdAt - a.createdAt)),
-    async sendMessage(dir, text, from, fromEmail) { st.messages[uid()] = { dir, text, from, fromEmail, createdAt: Date.now(), readAt: null }; save(); },
+    async sendMessage(dir, text, from, fromEmail, extra = {}) { st.messages[uid()] = { dir, text, from, fromEmail, ...extra, createdAt: Date.now(), readAt: null }; save(); },
     async markRead(id) { st.messages[id].readAt = Date.now(); save(); },
     async deleteMessage(id) { delete st.messages[id]; save(); },
 

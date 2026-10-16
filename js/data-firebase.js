@@ -184,6 +184,7 @@ export function createFirebaseApi(config) {
     listPeriodsFrom: async (from) => rows(await getDocs(query(col('periods'), where('to', '>=', from)))),
     listPeriodsByPerson: async (pid) => rows(await getDocs(query(col('periods'), where('personId', '==', pid)))),
     addPeriod: (p) => addDoc(col('periods'), { ...p, createdAt: Date.now() }),
+    updatePeriod: (id, data) => updateDoc(d('periods', id), data),
     deletePeriod: (id) => deleteDoc(d('periods', id)),
 
     listDayNotes: async (from, to) =>
@@ -192,7 +193,8 @@ export function createFirebaseApi(config) {
     deleteDayNote: (id) => deleteDoc(d('dayNotes', id)),
 
     listMessages: async () => rows(await getDocs(query(col('messages'), orderBy('createdAt', 'desc'), limit(200)))),
-    sendMessage: (dir, text, uid, email) => addDoc(col('messages'), { dir, text, from: uid, fromEmail: email, createdAt: Date.now(), readAt: null }),
+    // extra: { replyTo (id da mensagem respondida), fromRole }
+    sendMessage: (dir, text, uid, email, extra = {}) => addDoc(col('messages'), { dir, text, from: uid, fromEmail: email, ...extra, createdAt: Date.now(), readAt: null }),
     markRead: (id) => updateDoc(d('messages', id), { readAt: Date.now() }),
     deleteMessage: (id) => deleteDoc(d('messages', id)),
 

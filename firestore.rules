@@ -18,6 +18,7 @@ service cloud.firestore {
     function isAdmin() { return hasProfile() && me().role == 'admin'; }
     function isChief() { return hasProfile() && me().role == 'cozinha'; }
     function isKitchen() { return hasProfile() && me().role in ['cozinha', 'auxiliar']; }
+    function isCL() { return hasProfile() && me().role == 'cl'; } // vê painel/panorama com nomes e troca mensagens como administração
     function owns(pid) { return hasProfile() && me().get('personId', null) == pid; }
     function bootstrapPath() { return /databases/$(db)/documents/settings/bootstrap; }
     function onlyKeys(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
@@ -54,21 +55,21 @@ service cloud.firestore {
 
     // Comensais: iniciais, regime, regra padrão (sem nome completo)
     match /people/{pid} {
-      allow read: if isAdmin() || isKitchen() || owns(pid);
+      allow read: if isAdmin() || isKitchen() || isCL() || owns(pid);
       allow create, delete: if isAdmin();
       allow update: if isAdmin() || (owns(pid) && onlyKeys(['defaultRule', 'birthday', 'updatedAt']));
     }
 
     // Nome completo e e-mail — invisíveis para a cozinha
     match /names/{pid} {
-      allow read: if isAdmin() || owns(pid);
+      allow read: if isAdmin() || isCL() || owns(pid);
       allow write: if isAdmin();
     }
 
     // Alterações pontuais (por dia e refeição). A cozinha lê — por isso, sem observação aqui.
     function noNote() { return request.resource.data.get('note', '') == ''; }
     match /overrides/{id} {
-      allow read: if isAdmin() || isKitchen() || owns(resource.data.personId);
+      allow read: if isAdmin() || isKitchen() || isCL() || owns(resource.data.personId);
       allow create: if noNote() && (isAdmin() || owns(request.resource.data.personId));
       allow update: if noNote() && (isAdmin() || (owns(resource.data.personId) && owns(request.resource.data.personId)));
       allow delete: if isAdmin() || owns(resource.data.personId);
@@ -88,14 +89,14 @@ service cloud.firestore {
     // Cópia ANÔNIMA (data, refeição, texto) das observações liberadas pelo administrador: é o que a cozinha lê.
     // O autor pode apagar a cópia ao editar/apagar a própria observação (o id aleatório só ele e o admin conhecem).
     match /kitchenNotes/{id} {
-      allow read: if isAdmin() || isKitchen();
+      allow read: if isAdmin() || isKitchen() || isCL();
       allow create, update: if isAdmin();
       allow delete: if isAdmin() || hasProfile();
     }
 
     // Regras temporárias (viagens, períodos especiais)
     match /periods/{id} {
-      allow read: if isAdmin() || isKitchen() || owns(resource.data.personId);
+      allow read: if isAdmin() || isKitchen() || isCL() || owns(resource.data.personId);
       allow create: if isAdmin() || owns(request.resource.data.personId);
       allow update: if isAdmin() || (owns(resource.data.personId) && owns(request.resource.data.personId));
       allow delete: if isAdmin() || owns(resource.data.personId);
@@ -103,17 +104,17 @@ service cloud.firestore {
 
     // Recados do administrador para a cozinha, por dia (podem somar pessoas extras)
     match /dayNotes/{id} {
-      allow read: if isAdmin() || isKitchen();
+      allow read: if isAdmin() || isKitchen() || isCL();
       allow write: if isAdmin();
     }
 
     // Mensagens entre a administradora da cozinha (k2a) e o administrador (a2k)
     match /messages/{id} {
-      allow read: if isAdmin() || isKitchen();
+      allow read: if isAdmin() || isKitchen() || isCL();
       allow create: if request.resource.data.from == request.auth.uid
-        && ((isAdmin() && request.resource.data.dir == 'a2k') || (isChief() && request.resource.data.dir == 'k2a'));
+        && (((isAdmin() || isCL()) && request.resource.data.dir == 'a2k') || (isChief() && request.resource.data.dir == 'k2a'));
       allow update: if onlyKeys(['readAt'])
-        && ((isAdmin() && resource.data.dir == 'k2a') || (isChief() && resource.data.dir == 'a2k'));
+        && (((isAdmin() || isCL()) && resource.data.dir == 'k2a') || (isChief() && resource.data.dir == 'a2k'));
       allow delete: if isAdmin();
     }
 

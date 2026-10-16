@@ -23,7 +23,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const isAdmin = () => S.role === 'admin';
 const isKitchenRole = (r) => r === 'cozinha' || r === 'auxiliar';
 const isKitchen = () => isKitchenRole(S.role);
-const ROLE_NAME = { admin: 'administrador', comensal: 'comensal', cozinha: 'administradora da cozinha', auxiliar: 'auxiliar de cozinha' };
+const ROLE_NAME = { admin: 'administrador', comensal: 'comensal', cozinha: 'Administradora', auxiliar: 'Numerária Auxiliar', cl: 'CL' };
+const isCL = () => S.role === 'cl';
+const canSeeNames = () => isAdmin() || isCL();
 const fmtDateTime = (ms) => new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const personById = (id) => S.people.find((p) => p.id === id);
 const fullName = (id) => S.names[id]?.fullName || '';
@@ -61,7 +63,7 @@ function openDialog(html, bind) {
 }
 
 function chip(item, cls = '', extra = '', meal = '') {
-  const name = isAdmin() ? fullName(item.id) : '';
+  const name = canSeeNames() ? fullName(item.id) : '';
   const label = esc(item.initials) + (S.showNames && name ? ` <span class="t">${esc(name)}</span>` : '');
   const edit = meal && isAdmin() ? ` data-pid="${item.id}" data-meal="${meal}" role="button" tabindex="0"` : '';
   const dietText = item.diet ? personById(item.id)?.dietText : '';
@@ -99,7 +101,7 @@ async function loadSession() {
 }
 
 // Mensagens não lidas destinadas a mim (admin ← cozinha, cozinha ← admin)
-const inboxDir = () => (isAdmin() ? 'k2a' : S.role === 'cozinha' ? 'a2k' : null);
+const inboxDir = () => (isAdmin() || isCL() ? 'k2a' : S.role === 'cozinha' ? 'a2k' : null);
 async function refreshUnread() {
   try {
     if (inboxDir()) S.unread = (await api.listMessages()).filter((m) => m.dir === inboxDir() && !m.readAt).length;
@@ -109,7 +111,7 @@ async function refreshUnread() {
 }
 
 async function loadPeople() {
-  if (S.role === 'admin') {
+  if (S.role === 'admin' || S.role === 'cl') {
     [S.people, S.names] = await Promise.all([api.listPeople(), api.listNames()]);
   } else if (isKitchen()) {
     S.people = await api.listPeople(); S.names = {};
@@ -129,7 +131,12 @@ const NAV = {
   auxiliar: [['painel', 'Painel'], ['semana', 'Semana'], ['estatisticas', 'Estatísticas'], ['mensagens', 'Mensagens'], ['conta', 'Conta']],
   comensal: [['minhas', 'Minhas refeições'], ['padrao', 'Regra padrão'], ['temporarias', 'Temporárias'], ['conta', 'Conta']],
 };
-const navFor = () => NAV[S.role] || NAV.comensal;
+const navFor = () => {
+  if (S.role !== 'cl') return NAV[S.role] || NAV.comensal;
+  // CL: painel, semana, panorama e mensagens (+ as próprias refeições, se também for comensal)
+  return [['painel', 'Painel'], ['semana', 'Semana'], ['panorama', 'Panorama'], ['mensagens', 'Mensagens'],
+    ...(S.myPid ? [['minhas', 'Minhas refeições'], ['padrao', 'Regra padrão'], ['temporarias', 'Temporárias']] : []), ['conta', 'Conta']];
+};
 
 function renderNav() {
   const me = personById(S.myPid);
@@ -186,8 +193,9 @@ function renderLogin() {
       Os dados ficam apenas neste navegador. Entre como:</p>
       <button class="primary" data-who="u-admin">Administrador (LK)</button>
       <button data-who="u-gn">Comensal (GN)</button>
-      <button data-who="u-cozinha">Administradora da cozinha</button>
-      <button data-who="u-aux">Auxiliar de cozinha</button>
+      <button data-who="u-cozinha">Administradora (cozinha)</button>
+      <button data-who="u-aux">Numerária Auxiliar (cozinha)</button>
+      <button data-who="u-cl">CL (RV)</button>
     </div>`;
     $$('[data-who]').forEach((b) => b.addEventListener('click', () => api.signIn(b.dataset.who)));
     return;
@@ -904,7 +912,7 @@ async function viewTemporarias() {
       <div><strong>${esc(p.label || (p.repeat ? 'Repetição mensal' : isAbsent(p.grid) ? 'Ausência' : 'Regra temporária'))}</strong>
         ${p.repeat ? '<span class="badge plus">todo mês</span>' : ''}<br>
         <span class="small muted">${esc(when(p))} · ${isAbsent(p.grid) ? 'não faz refeições' : 'regra personalizada'}${p.to < t ? ' · encerrada' : ''}</span></div>
-      <button class="danger" data-del="${p.id}">Excluir</button></div>`).join('');
+      <span class="row"><button data-editp="${p.id}">Editar</button><button class="danger" data-del="${p.id}">Excluir</button></span></div>`).join('');
   const sel = (name, opts, cur) => `<select name="${name}">${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const offs = (sign) => [0, 1, 2, 3, 4, 5, 6].map((n) => [sign * n, n === 0 ? 'no próprio dia' : `${n} dia${n > 1 ? 's' : ''} ${sign < 0 ? 'antes' : 'depois'}`]);
   main.innerHTML = `${targetSelector()}
@@ -979,6 +987,7 @@ async function viewTemporarias() {
       toast('Regra temporária criada.'); route();
     }, f.querySelector('[type=submit]'));
   });
+  $$('[data-editp]').forEach((b) => b.addEventListener('click', () => editPeriodDialog(person, pers.find((x) => x.id === b.dataset.editp))));
   $$('[data-del]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm('Excluir esta regra temporária?')) return;
     guard(async () => {
@@ -989,6 +998,42 @@ async function viewTemporarias() {
       route();
     }, b);
   }));
+}
+
+// Editar datas/refeições de uma regra temporária (ex.: viagem que mudou)
+function editPeriodDialog(person, p) {
+  const mealSel = (name, cur) => `<select name="${name}">${L.MEALS.map((m) => `<option value="${m}" ${m === cur ? 'selected' : ''}>${L.MEAL_LABEL[m]}</option>`).join('')}</select>`;
+  const aus = L.isAbsentGrid(p.grid);
+  openDialog(`<form id="f-eper" class="stack">
+      <h3>Editar: ${esc(p.label || (p.repeat ? 'Repetição mensal' : aus ? 'Ausência' : 'Regra temporária'))}</h3>
+      ${p.repeat ? `<p class="muted small">${esc(L.describeRepeat(p.repeat))}</p>` : ''}
+      <label>Motivo <input name="label" maxlength="60" value="${esc(p.label)}"></label>
+      <div class="row"><label>${p.repeat ? 'Valendo a partir de' : 'De'} <input type="date" name="from" value="${p.from}" required></label>
+        <label>${p.repeat ? 'Até (opcional)' : 'Até (inclusive)'} <input type="date" name="to" value="${p.to && p.to !== L.NO_END ? p.to : ''}" ${p.repeat ? '' : 'required'}></label></div>
+      ${p.repeat ? '' : `<div class="row">
+        <label>${aus ? 'Primeira refeição que não faz (1º dia)' : 'Começa no 1º dia a partir do'} ${mealSel('fromMeal', p.fromMeal || 'cafe')}</label>
+        <label>${aus ? 'Última refeição que não faz (último dia)' : 'Termina no último dia depois do'} ${mealSel('toMeal', p.toMeal || 'jantar')}</label></div>`}
+      <div class="row spread"><span></span><span class="row"><button type="button" data-close>Cancelar</button>
+        <button class="primary" type="submit">Salvar</button></span></div></form>`, (root) => {
+    const f = $('#f-eper', root);
+    f.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const to = p.repeat ? f.to.value || L.NO_END : f.to.value;
+      if (to < f.from.value) return toast('A data final é anterior à inicial.');
+      const data = { label: f.label.value.trim(), from: f.from.value, to };
+      if (!p.repeat) {
+        if (to === f.from.value && L.MEALS.indexOf(f.fromMeal.value) > L.MEALS.indexOf(f.toMeal.value)) return toast('No mesmo dia, a primeira refeição não pode vir depois da última.');
+        Object.assign(data, { fromMeal: f.fromMeal.value, toMeal: f.toMeal.value });
+      }
+      guard(async () => {
+        const items = await lateRuleCheck(person, (a) => ({ periods: a.periods.map((x) => (x.id === p.id ? { ...x, ...data } : x)) }));
+        if (!items) return;
+        await api.updatePeriod(p.id, data);
+        await sendAlert(person, items);
+        dlg.close(); toast(items.length ? 'Regra alterada — a cozinha foi alertada.' : 'Regra alterada.'); route();
+      }, f.querySelector('[type=submit]'));
+    });
+  });
 }
 
 // ---------- Pessoas (admin) ----------
@@ -1003,14 +1048,14 @@ async function viewPessoas() {
   const userOf = (uid) => S.users.find((u) => u.id === uid);
   const rows = S.people.map((p) => {
     const u = p.uid && userOf(p.uid);
-    const acc = u ? `${esc(u.email || S.names[p.id]?.email || '')} · ${u.role}` : (p.guest ? 'convidado' : 'sem conta');
+    const acc = u ? `${esc(u.email || S.names[p.id]?.email || '')} · ${ROLE_NAME[u.role] || u.role}` : (p.guest ? 'convidado' : 'sem conta');
     return `<div class="list-item ${p.active === false ? 'inactive' : ''}">
       <div><strong>${esc(p.initials)}</strong> ${p.diet ? '<span class="badge">regime</span>' : ''} ${esc(fullName(p.id))}${p.birthday ? ` <span class="small muted">🎂 ${L.fmtBday(p.birthday)}</span>` : ''}
         ${p.diet && p.dietText ? `<br><span class="small" style="color:var(--diet)">${esc(p.dietText)}</span>` : ''}
         <br><span class="small muted">${acc}${p.active === false ? ' · inativo' : ''}${p.uid === S.user.uid ? ' · você' : ''}</span></div>
       <button data-edit="${p.id}">Editar</button></div>`;
   }).join('');
-  const kitchens = S.users.filter((u) => isKitchenRole(u.role)).map((u) => `<div class="list-item">
+  const kitchens = S.users.filter((u) => isKitchenRole(u.role) || (u.role === 'cl' && !u.personId)).map((u) => `<div class="list-item">
       <span>${esc(u.email)}<br><span class="small muted">${ROLE_NAME[u.role]}</span></span>
       <button class="danger" data-rmk="${u.id}">Remover acesso</button></div>`).join('');
   main.innerHTML = `${tabs}
@@ -1018,12 +1063,17 @@ async function viewPessoas() {
       <span class="row"><button id="b-import">Importar planilha</button><button class="primary" id="b-add">+ Adicionar</button></span></div>
       ${!S.myPid ? '<p class="alert small">Você ainda não está cadastrado como comensal. Use “+ Adicionar” e escolha “É a minha conta”.</p>' : ''}
       ${rows || '<p class="muted">Ninguém cadastrado.</p>'}</div>
-    <div class="card"><h2>Cozinha</h2>
-      <p class="muted small">A administradora da cozinha vê totais, horários, regimes e observações, apenas com as iniciais;
-        pode criar contas de auxiliares (mesma visão) e mandar mensagens para você.</p>
+    <div class="card"><h2>Cozinha e CL</h2>
+      <p class="muted small"><b>Administradora</b> (cozinha): vê totais, horários, regimes e observações, só com iniciais; cria contas de
+        Numerárias Auxiliares e troca mensagens com você. <b>Numerária Auxiliar</b>: mesma visão, sem criar contas nem mandar mensagens.
+        <b>CL</b>: vê painel, semana e panorama (com nomes) e troca mensagens com a cozinha como administração.
+        Se o CL também for comensal, dê o papel “CL” no cadastro dele (Editar).</p>
       ${kitchens || '<p class="muted">Nenhuma conta.</p>'}
-      <form id="f-k" class="stack" style="margin-top:10px"><h3>Criar conta da administradora da cozinha</h3>
+      <form id="f-k" class="stack" style="margin-top:10px"><h3>Criar conta</h3>
+        <label>Tipo <select name="role"><option value="cozinha">Administradora (cozinha)</option>
+          <option value="auxiliar">Numerária Auxiliar (cozinha)</option><option value="cl">CL</option></select></label>
         ${accountFields()}
+        <p class="alert small" id="err-k" hidden></p>
         <button type="submit">Criar conta</button></form></div>`;
   bindTabs();
   $('#b-add').addEventListener('click', () => personForm(null));
@@ -1033,7 +1083,10 @@ async function viewPessoas() {
   fk.addEventListener('submit', (e) => {
     e.preventDefault();
     if (fk.pw.value && fk.pw.value.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.');
-    guard(async () => { await api.createKitchen(fk.email.value.trim(), fk.pw.value || undefined, 'cozinha'); toast('Conta da cozinha criada.'); route(); }, fk.querySelector('button'));
+    createAccountSafely(fk, $('#err-k'), async () => {
+      await api.createKitchen(fk.email.value.trim(), fk.pw.value || undefined, fk.role.value);
+      toast(`Conta (${ROLE_NAME[fk.role.value]}) criada.`); route();
+    });
   });
   $$('[data-rmk]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm('Remover o acesso desta conta? (O login continua existindo no Firebase, mas não verá mais nada.)')) return;
@@ -1067,15 +1120,16 @@ async function panoramaHtml() {
     ${bdays.length ? `<div class="card"><h2>🎂 Aniversários</h2><ul class="notes">${bdays.map((x) => `<li>${who(x.person.id)} — ${L.fmtDate(x.date)}</li>`).join('')}</ul></div>` : ''}
     <div class="card"><h2>Presença dia a dia</h2>
       <p class="muted small">Número de refeições que cada um faz no dia (já com regras temporárias e alterações). ✈ = ausência.
-        Toque numa linha para ver as refeições da pessoa.</p>
+        ${isAdmin() ? 'Toque numa linha para ver as refeições da pessoa.' : ''}</p>
       <div class="tablewrap"><table class="overview panorama">
         <thead><tr><th class="sticky"></th>${dates.map((d) => `<th class="${[0, 6].includes(L.weekday(d)) ? 'wk' : ''}">${L.DOW[L.weekday(d)].slice(0, 1)}<br>${d.slice(8)}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody></table></div></div>`;
 }
 function bindPanorama() {
   $('#pan-days').addEventListener('change', (e) => { S.panoramaDays = Number(e.target.value); route(); });
-  $$('.panorama tr[data-pid]').forEach((tr) => tr.addEventListener('click', () => { S.targetPid = tr.dataset.pid; location.hash = '#/minhas'; }));
+  if (isAdmin()) $$('.panorama tr[data-pid]').forEach((tr) => tr.addEventListener('click', () => { S.targetPid = tr.dataset.pid; location.hash = '#/minhas'; }));
 }
+async function viewPanorama() { main.innerHTML = await panoramaHtml(); bindPanorama(); }
 
 // Visão geral (administrador): regra padrão de todos + temporárias em vigor
 async function overviewHtml() {
@@ -1134,14 +1188,15 @@ function personForm(p) {
     <div id="accbox" class="stack" hidden>
       <label>E-mail <input type="email" name="email"></label>
       <label>Senha provisória (opcional) <input type="text" name="pw" minlength="6" autocomplete="off"></label>
-      <label>Papel <select name="role"><option value="comensal">Comensal</option><option value="admin">Administrador</option></select></label>
+      <label>Papel <select name="role"><option value="comensal">Comensal</option><option value="admin">Administrador</option><option value="cl">CL</option></select></label>
       <p class="muted small">Com senha provisória, passe-a à pessoa: ela troca no primeiro acesso. Sem senha, ela recebe
         um e-mail para criar a própria senha (pode cair no spam).</p>
     </div>`;
   const accountEdit = u ? `
     <p class="small">Login: <b>${esc(u.email)}</b></p>
     ${isMe ? '' : `<label>Papel <select name="role"><option value="comensal" ${u.role === 'comensal' ? 'selected' : ''}>Comensal</option>
-      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option></select></label>`}
+      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option>
+      <option value="cl" ${u.role === 'cl' ? 'selected' : ''}>CL</option></select></label>`}
     <button type="button" id="b-resetpw">Enviar e-mail para redefinir senha</button>` : accountNew;
   openDialog(`<form id="f-p" class="stack">
       <h3>${isNew ? 'Adicionar comensal' : 'Editar ' + esc(p.initials)}</h3>
@@ -1369,17 +1424,25 @@ async function viewEstatisticas() {
 // ---------- Mensagens (administrador ⇄ administradora da cozinha) ----------
 async function viewMensagens() {
   const msgs = await api.listMessages();
-  const canSend = isAdmin() || S.role === 'cozinha';
-  const label = { k2a: 'Cozinha → Administrador', a2k: 'Administrador → Cozinha' };
+  const canSend = isAdmin() || isCL() || S.role === 'cozinha';
+  const myDir = isKitchen() ? 'k2a' : 'a2k';
+  const SENDER = { admin: 'Administrador', cl: 'CL', cozinha: 'Administradora' };
+  const label = (m) => `${SENDER[m.fromRole] || (m.dir === 'k2a' ? 'Cozinha' : 'Administrador')} → ${m.dir === 'k2a' ? 'Administração' : 'Cozinha'}`;
   const mine = inboxDir();
-  const list = msgs.map((m) => `<div class="msg ${m.dir === mine && !m.readAt ? 'unread' : ''}">
-      <div class="row spread small"><b>${label[m.dir]}</b><span class="muted">${fmtDateTime(m.createdAt)}${
+  // conversas: mensagem original + respostas (em ordem)
+  const byId = new Map(msgs.map((m) => [m.id, m]));
+  const roots = msgs.filter((m) => !m.replyTo || !byId.has(m.replyTo));
+  const repliesOf = (id) => msgs.filter((m) => m.replyTo === id).sort((a, b) => a.createdAt - b.createdAt);
+  const one = (m, isReply) => `<div class="msg ${isReply ? 'reply' : ''} ${m.dir === mine && !m.readAt ? 'unread' : ''}">
+      <div class="row spread small"><b>${isReply ? '↳ ' : ''}${label(m)}</b><span class="muted">${fmtDateTime(m.createdAt)}${
         m.dir !== mine && m.readAt ? ' · lida' : ''}</span></div>
       <div class="msgtext">${esc(m.text)}</div>
-      ${isAdmin() ? `<button class="link small" data-delmsg="${m.id}">apagar</button>` : ''}</div>`).join('');
+      ${isAdmin() ? `<button class="link small" data-delmsg="${m.id}">apagar</button>` : ''}</div>`;
+  const list = roots.map((m) => `<div class="thread">${one(m, false)}${repliesOf(m.id).map((r) => one(r, true)).join('')}
+      ${canSend ? `<button class="link small" data-reply="${m.id}">↩ Responder</button>` : ''}</div>`).join('');
   main.innerHTML = `
     ${canSend ? `<form class="card stack" id="f-msg">
-      <h2>Nova mensagem ${isAdmin() ? 'para a cozinha' : 'para o administrador'}</h2>
+      <h2>Nova mensagem ${isKitchen() ? 'para a administração' : 'para a cozinha'}</h2>
       <textarea name="text" rows="3" maxlength="1000" required></textarea>
       <div class="row"><button class="primary" type="submit">Enviar</button></div></form>` : ''}
     <div class="card"><h2>Mensagens</h2>${list || '<p class="muted">Nenhuma mensagem.</p>'}</div>`;
@@ -1387,10 +1450,28 @@ async function viewMensagens() {
   f?.addEventListener('submit', (e) => {
     e.preventDefault();
     guard(async () => {
-      await api.sendMessage(isAdmin() ? 'a2k' : 'k2a', f.text.value.trim(), S.user.uid, S.user.email);
+      await api.sendMessage(myDir, f.text.value.trim(), S.user.uid, S.user.email, { fromRole: S.role });
       toast('Mensagem enviada.'); route();
     }, f.querySelector('button'));
   });
+  $$('[data-reply]').forEach((b) => b.addEventListener('click', () => {
+    const m = byId.get(b.dataset.reply);
+    openDialog(`<form id="f-reply" class="stack"><h3>↩ Responder</h3>
+        <blockquote class="quote">${esc(m.text)}</blockquote>
+        <textarea name="text" rows="3" maxlength="1000" required></textarea>
+        <div class="row spread"><span></span><span class="row"><button type="button" data-close>Cancelar</button>
+          <button class="primary" type="submit">Enviar resposta</button></span></div></form>`, (root) => {
+      const fr = $('#f-reply', root);
+      fr.text.focus();
+      fr.addEventListener('submit', (e) => {
+        e.preventDefault();
+        guard(async () => {
+          await api.sendMessage(myDir, fr.text.value.trim(), S.user.uid, S.user.email, { fromRole: S.role, replyTo: m.id });
+          dlg.close(); toast('Resposta enviada.'); route();
+        }, fr.querySelector('[type=submit]'));
+      });
+    });
+  }));
   $$('[data-delmsg]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm('Apagar esta mensagem?')) return;
     guard(async () => { await api.deleteMessage(b.dataset.delmsg); route(); }, b);
@@ -1405,26 +1486,40 @@ async function viewMensagens() {
 // ---------- Equipe da cozinha (administradora cria auxiliares) ----------
 async function viewEquipe() {
   const aux = await api.listAuxiliaries();
-  main.innerHTML = `<div class="card"><h2>Auxiliares de cozinha</h2>
+  main.innerHTML = `<div class="card"><h2>Numerárias Auxiliares</h2>
       <p class="muted small">Veem o mesmo painel que você (somente iniciais), mas não criam contas nem mandam mensagens.</p>
       ${aux.map((u) => `<div class="list-item"><span>${esc(u.email)}</span>
         <button class="danger" data-rm="${u.id}">Remover acesso</button></div>`).join('') || '<p class="muted">Nenhuma.</p>'}</div>
-    <form class="card stack" id="f-aux"><h2>Criar conta de auxiliar</h2>
+    <form class="card stack" id="f-aux"><h2>Criar conta de Numerária Auxiliar</h2>
       ${accountFields()}
+      <p class="alert small" id="err-aux" hidden></p>
       <div class="row"><button class="primary" type="submit">Criar conta</button></div></form>`;
   const f = $('#f-aux');
   f.addEventListener('submit', (e) => {
     e.preventDefault();
     if (f.pw.value && f.pw.value.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.');
-    guard(async () => {
+    createAccountSafely(f, $('#err-aux'), async () => {
       await api.createKitchen(f.email.value.trim(), f.pw.value || undefined, 'auxiliar');
       toast(f.pw.value ? 'Conta criada.' : 'Conta criada; a pessoa recebeu um e-mail para criar a senha.'); route();
-    }, f.querySelector('[type=submit]'));
+    });
   });
   $$('[data-rm]').forEach((b) => b.addEventListener('click', () => {
-    if (!confirm('Remover o acesso desta auxiliar?')) return;
+    if (!confirm('Remover o acesso desta Numerária Auxiliar?')) return;
     guard(async () => { await api.removeUserProfile(b.dataset.rm); route(); }, b);
   }));
+}
+
+// Cria uma conta mostrando o erro na própria tela (e não só num aviso passageiro)
+async function createAccountSafely(form, errBox, fn) {
+  const btn = form.querySelector('[type=submit]');
+  errBox.hidden = true; btn.disabled = true;
+  try { await fn(); } catch (e) {
+    console.error(e);
+    errBox.textContent = `Não foi possível criar a conta: ${errMsg(e)}` + (e?.code === 'auth/email-already-in-use'
+      ? ' Se foi uma tentativa anterior que ficou pela metade, peça ao administrador para apagar esse login no console do Firebase (Authentication → Usuários) e tente de novo.'
+      : e?.code ? ` (código: ${e.code})` : '');
+    errBox.hidden = false;
+  } finally { btn.disabled = false; }
 }
 
 // Campos de e-mail + senha provisória (opcional: sem senha, a pessoa recebe e-mail para criar a sua)
@@ -1546,5 +1641,5 @@ function importDialog() {
 const VIEWS = {
   painel: viewPainel, semana: viewSemana, minhas: viewMinhas, padrao: viewPadrao,
   temporarias: viewTemporarias, pessoas: viewPessoas, config: viewConfig, conta: viewConta,
-  estatisticas: viewEstatisticas, mensagens: viewMensagens, equipe: viewEquipe,
+  estatisticas: viewEstatisticas, mensagens: viewMensagens, equipe: viewEquipe, panorama: viewPanorama,
 };

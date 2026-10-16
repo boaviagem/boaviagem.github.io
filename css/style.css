@@ -172,6 +172,11 @@ details.diets ul { margin-top: 8px; }
 .panorama th.wk { color: var(--warn); }
 .panorama tbody td:nth-child(3n+2) { border-left: 0; }
 
+.thread { border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 4px; }
+.thread .msg { border-bottom: 0; }
+.msg.reply { margin-left: 18px; padding-left: 10px; border-left: 3px solid var(--line); }
+blockquote.quote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }
