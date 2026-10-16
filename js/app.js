@@ -74,6 +74,9 @@ function chip(item, cls = '', extra = '', meal = '') {
 api.onAuth(async (u) => {
   S.user = u;
   stopWatchingCalls();
+  // Demonstração: ?demo&as=u-cozinha entra direto com aquele perfil (útil para apresentar)
+  const as = DEMO && !u && new URLSearchParams(location.search).get('as');
+  if (as && !S.autoLogged) { S.autoLogged = true; return api.signIn(as).catch(() => renderLogin()); }
   if (!u) { $('#nav').hidden = true; $('#who').innerHTML = ''; return renderLogin(); }
   main.innerHTML = loading;
   try {
