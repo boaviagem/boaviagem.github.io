@@ -203,6 +203,7 @@ window.addEventListener('hashchange', () => { if (S.role) route(); });
 
 async function route() {
   const allowed = navFor().map(([k]) => k);
+  if (isAdmin()) allowed.push('panorama'); // também acessível em Pessoas → Panorama
   let v = location.hash.replace(/^#\/?/, '');
   if (!allowed.includes(v)) v = allowed[0];
   S.view = v;
