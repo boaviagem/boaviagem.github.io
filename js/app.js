@@ -23,9 +23,9 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const isAdmin = () => S.role === 'admin';
 const isKitchenRole = (r) => r === 'cozinha' || r === 'auxiliar';
 const isKitchen = () => isKitchenRole(S.role);
-const ROLE_NAME = { admin: 'administrador', comensal: 'comensal', cozinha: 'Administradora', auxiliar: 'Numerária Auxiliar', cl: 'CL' };
-const isCL = () => S.role === 'cl';
-const canSeeNames = () => isAdmin() || isCL();
+// 'admin' = CL da casa (administra a casa). O gestor geral (profile.gestor) cuida das casas.
+const ROLE_NAME = { admin: 'CL', comensal: 'comensal', cozinha: 'Administradora', auxiliar: 'Numerária Auxiliar' };
+const canSeeNames = () => isAdmin();
 const fmtDateTime = (ms) => new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const personById = (id) => S.people.find((p) => p.id === id);
 const fullName = (id) => S.names[id]?.fullName || '';
@@ -91,7 +91,17 @@ async function loadSession() {
     return false;
   }
   if (S.profile.mustChange && !DEMO) { renderMustChange(); return false; }
-  S.role = S.profile.role;
+  S.isGestor = !!S.profile.gestor;
+  S.houseId = S.profile.houseId || null;
+  if (!S.houseId && !S.isGestor) { renderNoHouse(); return false; }
+  api.setHouse(S.houseId);
+  S.house = S.houseId ? await api.getHouse(S.houseId) : null;
+  if (!S.house) { // gestor cuja casa ainda não foi criada/migrada: só a tela de casas
+    if (!S.isGestor) { renderNoHouse(); return false; }
+    S.role = null; S.myPid = null; S.people = []; S.names = {};
+    renderNav(); return true;
+  }
+  S.role = S.profile.role === 'cl' ? 'admin' : S.profile.role;
   S.myPid = S.profile.personId || null;
   S.settings = L.mergeSettings(await api.getSettings());
   await loadPeople();
@@ -100,21 +110,36 @@ async function loadSession() {
   refreshUnread();
   if (isAdmin()) startWatchingCalls();
   if (isAdmin()) api.migrateNotes().then((n) => n && console.info(`${n} observação(ões) movidas`)).catch((e) => console.warn('migrateNotes', e));
+  if (isAdmin()) dailyCleanup();
   return true;
 }
 
+// CL: uma vez por dia (por aparelho), apaga registros com mais de 45 dias — o app fica leve e barato
+function dailyCleanup() {
+  const k = `comensais-limpeza-${S.houseId}`, t = L.today();
+  try { if (localStorage.getItem(k) === t) return; localStorage.setItem(k, t); } catch { return; }
+  api.cleanupOld(45).then((n) => n && console.info(`limpeza: ${n} registro(s) antigos apagados`)).catch((e) => console.warn('cleanup', e));
+}
+
+function renderNoHouse() {
+  main.innerHTML = `<div class="card login stack">
+    <p>A conta <b>${esc(S.user.email)}</b> ainda não está ligada a nenhuma casa. Fale com o CL da sua casa.</p>
+    <button id="b-out">Sair</button></div>`;
+  $('#b-out').addEventListener('click', () => api.signOut());
+}
+
 // Mensagens não lidas destinadas a mim (admin ← cozinha, cozinha ← admin)
-const inboxDir = () => (isAdmin() || isCL() ? 'k2a' : S.role === 'cozinha' ? 'a2k' : null);
+const inboxDir = () => (isAdmin() ? 'k2a' : S.role === 'cozinha' ? 'a2k' : null);
 async function refreshUnread() {
   try {
-    if (inboxDir()) S.unread = (await api.listMessages()).filter((m) => m.dir === inboxDir() && !m.readAt).length;
-    if (isKitchen()) S.alerts = (await api.listAlerts()).filter((a) => !a.ackAt).length;
+    if (inboxDir()) S.unread = await api.countUnread(inboxDir());
+    if (isKitchen()) S.alerts = await api.countOpenAlerts();
     renderNav();
   } catch (e) { console.warn(e); }
 }
 
 async function loadPeople() {
-  if (S.role === 'admin' || S.role === 'cl') {
+  if (S.role === 'admin') {
     [S.people, S.names] = await Promise.all([api.listPeople(), api.listNames()]);
   } else if (isKitchen()) {
     S.people = await api.listPeople(); S.names = {};
@@ -135,15 +160,15 @@ const NAV = {
   comensal: [['minhas', 'Minhas refeições'], ['padrao', 'Regra padrão'], ['temporarias', 'Temporárias'], ['conta', 'Conta']],
 };
 const navFor = () => {
-  if (S.role !== 'cl') return NAV[S.role] || NAV.comensal;
-  // CL: painel, semana, panorama e mensagens (+ as próprias refeições, se também for comensal)
-  return [['painel', 'Painel'], ['semana', 'Semana'], ['panorama', 'Panorama'], ['mensagens', 'Mensagens'],
-    ...(S.myPid ? [['minhas', 'Minhas refeições'], ['padrao', 'Regra padrão'], ['temporarias', 'Temporárias']] : []), ['conta', 'Conta']];
+  if (!S.role) return [['casas', 'Casas'], ['conta', 'Conta']]; // gestor sem casa
+  const base = NAV[S.role] || NAV.comensal;
+  return S.isGestor ? [...base.slice(0, -1), ['casas', 'Casas'], base[base.length - 1]] : base;
 };
 
 function renderNav() {
   const me = personById(S.myPid);
-  $('#who').innerHTML = `${me ? esc(me.initials) + ' · ' : ''}${ROLE_NAME[S.role] || ''}${DEMO ? ' · <b>DEMO</b>' : ''}`;
+  $('#who').innerHTML = `${S.house?.name ? `<b>${esc(S.house.name)}</b> · ` : ''}${me ? esc(me.initials) + ' · ' : ''}${
+    ROLE_NAME[S.role] || (S.isGestor ? 'gestor geral' : '')}${DEMO ? ' · <b>DEMO</b>' : ''}`;
   const nav = $('#nav');
   const cur = S.view;
   nav.innerHTML = navFor().map(([k, t]) => `<a href="#/${k}" data-k="${k}" class="${k === cur ? 'on' : ''}">${t}${
@@ -194,11 +219,12 @@ function renderLogin() {
       <h2>Modo demonstração</h2>
       <p class="muted small">${configured ? '' : 'O Firebase ainda não foi configurado (js/firebase-config.js). '}
       Os dados ficam apenas neste navegador. Entre como:</p>
-      <button class="primary" data-who="u-admin">Administrador (LK)</button>
+      <button class="primary" data-who="u-admin">CL e gestor geral (LK)</button>
       <button data-who="u-gn">Comensal (GN)</button>
       <button data-who="u-cozinha">Administradora (cozinha)</button>
       <button data-who="u-aux">Numerária Auxiliar (cozinha)</button>
       <button data-who="u-cl">CL (RV)</button>
+      <button data-who="u-cl2">CL de outra casa</button>
     </div>`;
     $$('[data-who]').forEach((b) => b.addEventListener('click', () => api.signIn(b.dataset.who)));
     return;
@@ -224,8 +250,8 @@ function renderLogin() {
 function renderBootstrap() {
   main.innerHTML = `<div class="card login stack">
     <h2>Primeiro acesso</h2>
-    <p>Ainda não há administrador. Tornar <b>${esc(S.user.email)}</b> o administrador do sistema?</p>
-    <button class="primary" id="b-boot">Sim, sou o administrador</button>
+    <p>Instalação nova. Tornar <b>${esc(S.user.email)}</b> o gestor geral e CL da casa principal?</p>
+    <button class="primary" id="b-boot">Sim, sou o gestor</button>
     <button id="b-out">Sair</button></div>`;
   $('#b-boot').addEventListener('click', (e) => guard(async () => {
     await api.bootstrapAdmin(S.user.uid, S.user.email);
@@ -258,7 +284,7 @@ function renderMustChange() {
 
 function renderNoProfile() {
   main.innerHTML = `<div class="card login stack">
-    <p>A conta <b>${esc(S.user.email)}</b> ainda não foi liberada pelo administrador.</p>
+    <p>A conta <b>${esc(S.user.email)}</b> ainda não foi liberada pelo CL da casa.</p>
     <button id="b-out">Sair</button></div>`;
   $('#b-out').addEventListener('click', () => api.signOut());
 }
@@ -298,7 +324,7 @@ function mealCard(meal, s, date) {
     parts.push(`<div class="sub">Observações</div><ul class="notes">${s.anonNotes.map((n) => `<li>${esc(n.text)}</li>`).join('')}</ul>`);
   }
   if (s.dayNotes?.length) {
-    parts.push(`<div class="sub">Recados do administrador</div><ul class="notes">${s.dayNotes.map(dayNoteItem).join('')}</ul>`);
+    parts.push(`<div class="sub">Recados do CL</div><ul class="notes">${s.dayNotes.map(dayNoteItem).join('')}</ul>`);
   }
   if (!s.total && !s.dietAbsent.length && !s.notes.length && !s.anonNotes?.length) parts.push('<p class="muted">Ninguém.</p>');
   if (ev) parts.push('</details>');
@@ -335,14 +361,14 @@ const CALL_REASONS = ['Urgente', 'Falta de ingrediente', 'Dúvida sobre refeiç�
 async function kitchenCallCard() {
   const recent = (await api.listCalls()).filter((c) => Date.now() - c.createdAt < 864e5).slice(0, 5);
   return `<div class="card callcard"><div class="row spread">
-      <span class="small muted">Precisa do administrador?</span>
-      <button class="primary" id="b-call">🔔 Chamar o administrador</button></div>
+      <span class="small muted">Precisa do CL?</span>
+      <button class="primary" id="b-call">🔔 Chamar o CL</button></div>
     ${recent.length ? `<ul class="notes small" style="margin-top:8px">${recent.map((c) => `<li>${fmtDateTime(c.createdAt)} — <b>${esc(c.reason)}</b>${
       c.text ? ': ' + esc(c.text) : ''} · ${c.seenAt ? `<span class="muted">visto ${fmtDateTime(c.seenAt)}</span>` : '<span style="color:var(--warn)">aguardando</span>'}</li>`).join('')}</ul>` : ''}</div>`;
 }
 function callDialog() {
   openDialog(`<form id="f-call" class="stack">
-      <h3>🔔 Chamar o administrador</h3>
+      <h3>🔔 Chamar o CL</h3>
       <div class="seg">${CALL_REASONS.map((r, i) => `<label><input type="radio" name="reason" value="${r}" ${i === 0 ? 'checked' : ''}> ${r}</label>`).join('')}</div>
       <label>Mensagem (opcional) <input name="text" maxlength="200" placeholder="ex.: acabou o gás"></label>
       <div class="row spread"><span></span><span class="row"><button type="button" data-close>Cancelar</button>
@@ -352,7 +378,7 @@ function callDialog() {
       e.preventDefault();
       guard(async () => {
         await api.addCall({ reason: f.reason.value, text: f.text.value.trim(), role: S.role, email: S.user.email }, S.user.uid);
-        dlg.close(); toast('Administrador chamado.'); route();
+        dlg.close(); toast('CL chamado.'); route();
       }, f.querySelector('[type=submit]'));
     });
   });
@@ -410,7 +436,7 @@ function dietCard() {
 // ---------- Alertas: mudanças depois do horário de aviso ----------
 async function sendAlert(person, items) {
   if (!items.length) return;
-  await api.addAlert({ personId: person?.id || null, initials: person ? person.initials : 'Administrador', items }, S.user.uid);
+  await api.addAlert({ personId: person?.id || null, initials: person ? person.initials : 'CL', items }, S.user.uid);
 }
 // Para o administrador: alerta se a refeição já foi avisada (churrasco, +pessoas, recados)
 async function adminLateAlert(date, meal, text) {
@@ -589,7 +615,7 @@ async function viewPainel() {
     ${isKitchen() ? await kitchenCallCard() : ''}
     ${alertsCard(alerts)}
     ${birthdayCard(date)}
-    ${general.length ? `<div class="card recado"><div class="sub" style="margin-top:0">Recados do administrador</div>
+    ${general.length ? `<div class="card recado"><div class="sub" style="margin-top:0">Recados do CL</div>
       <ul class="notes">${general.map(dayNoteItem).join('')}</ul></div>` : ''}
     <div class="grid3">${L.MEALS.map((m) => mealCard(m, sum[m], date)).join('')}</div>
     ${dietCard()}
@@ -670,7 +696,7 @@ async function viewSemana() {
     }).join('');
     const gen = dn.filter((n) => !n.meal).length;
     const bd = L.birthdaysBetween(S.people, d, 1).map((x) => esc(x.person.initials)).join(' ');
-    rows.push(`<tr class="clickable" data-d="${d}"><th>${L.fmtDate(d)}${gen ? ' <span class="badge plus" title="Recado do administrador">recado</span>' : ''}${bd ? ` <span class="badge bbq" title="Aniversário">🎂 ${bd}</span>` : ''}</th>${cells}</tr>`);
+    rows.push(`<tr class="clickable" data-d="${d}"><th>${L.fmtDate(d)}${gen ? ' <span class="badge plus" title="Recado do CL">recado</span>' : ''}${bd ? ` <span class="badge bbq" title="Aniversário">🎂 ${bd}</span>` : ''}</th>${cells}</tr>`);
   }
   main.innerHTML = `
     <div class="card row spread">
@@ -700,7 +726,7 @@ function bindTargetSelector() {
 function noPerson() {
   main.innerHTML = targetSelector() + `<div class="card">${isAdmin()
     ? 'Nenhum comensal cadastrado ainda. Vá em <a href="#/pessoas">Pessoas</a>.'
-    : 'Sua conta não está vinculada a um comensal. Fale com o administrador.'}</div>`;
+    : 'Sua conta não está vinculada a um comensal. Fale com o CL.'}</div>`;
   bindTargetSelector();
 }
 
@@ -757,7 +783,7 @@ function editMeal(person, date, meal, pers, ovMap) {
   const warn = status === 'late'
     ? `<p class="alert small">⚠ Já passou o horário de avisar os comensais à cozinha (${L.fmtDeadline(date, meal, S.settings)}).
         Se mudar agora, a cozinha receberá um alerta desta mudança.</p>`
-    : status === 'past' ? '<p class="muted small">Refeição já passou (correção pelo administrador).</p>' : '';
+    : status === 'past' ? '<p class="muted small">Refeição já passou (correção pelo CL).</p>' : '';
   // Depois de salvar: se a cozinha já foi avisada e algo mudou, manda o alerta
   const afterSave = async (newOv) => {
     if (status !== 'late') return false;
@@ -777,7 +803,7 @@ function editMeal(person, date, meal, pers, ovMap) {
       ${warn}
       <p class="muted small">Padrão: ${base.on ? 'faz' + (base.when !== 'N' ? ` (${L.WHEN_LABEL[base.when]} ${base.timeShown})` : '') : 'não faz'}${base.source === 'temporária' ? ' (regra temporária)' : ''}.</p>
       ${addBlocked ? `<p class="alert small">⏰ Já passou o horário-limite para se incluir nesta refeição
-          (${L.addLimitOf(date, meal, S.settings).slice(11).replace(':', 'h')}, 1 hora antes). Fale com o administrador.</p>`
+          (${L.addLimitOf(date, meal, S.settings).slice(11).replace(':', 'h')}, 1 hora antes). Fale com o CL.</p>`
         : !cur.on && !isAdmin() ? `<p class="muted small">Para se incluir, o limite é ${L.addLimitOf(date, meal, S.settings).slice(11).replace(':', 'h')} (1 hora antes).</p>` : ''}
       <div class="seg">${radio('on', '1', 'Vou', cur.on).replace('<input', addBlocked ? '<input disabled' : '<input')}${radio('on', '0', 'Não vou', !cur.on)}</div>
       <fieldset id="whenbox"><legend>Horário</legend>
@@ -787,7 +813,7 @@ function editMeal(person, date, meal, pers, ovMap) {
       </fieldset>
       <label>Observação <input name="note" maxlength="140" value="${esc(cur.note)}" placeholder="ex.: jantar +leve"></label>
       ${isAdmin() ? `<label class="check"><input type="checkbox" name="share" ${cur.noteId ? (cur.noteApproved ? 'checked' : '') : 'checked'}> observação visível para a cozinha (sem o autor)</label>`
-        : '<p class="muted small">🔒 A observação vai para o administrador; a cozinha só a vê se ele liberar, e sem o seu nome.</p>'}
+        : '<p class="muted small">🔒 A observação vai para o CL; a cozinha só a vê se ele liberar, e sem o seu nome.</p>'}
       <div class="row small">${['+leve', 'lanche para levar', 'guardar um prato'].map((n) => `<button type="button" class="link" data-note="${n}">${n}</button>`).join('')}</div>
       <div class="row spread">
         ${cur.source === 'pontual' || cur.noteId ? '<button type="button" id="b-reset">Voltar ao padrão</button>' : '<span></span>'}
@@ -1058,9 +1084,9 @@ async function viewPessoas() {
         <br><span class="small muted">${acc}${p.active === false ? ' · inativo' : ''}${p.uid === S.user.uid ? ' · você' : ''}</span></div>
       <button data-edit="${p.id}">Editar</button></div>`;
   }).join('');
-  const kitchens = S.users.filter((u) => isKitchenRole(u.role) || (u.role === 'cl' && !u.personId)).map((u) => `<div class="list-item">
+  const kitchens = S.users.filter((u) => isKitchenRole(u.role) || (u.role === 'admin' && !u.personId)).map((u) => `<div class="list-item">
       <span>${esc(u.email)}</span>
-      <span class="row"><select data-role-uid="${u.id}" aria-label="Tipo de conta">${['cozinha', 'auxiliar', 'cl'].map((r) =>
+      <span class="row"><select data-role-uid="${u.id}" aria-label="Tipo de conta">${['cozinha', 'auxiliar', 'admin'].map((r) =>
         `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_NAME[r]}</option>`).join('')}</select>
       <button class="danger" data-rmk="${u.id}">Remover acesso</button></span></div>`).join('');
   main.innerHTML = `${tabs}
@@ -1071,12 +1097,12 @@ async function viewPessoas() {
     <div class="card"><h2>Cozinha e CL</h2>
       <p class="muted small"><b>Administradora</b> (cozinha): vê totais, horários, regimes e observações, só com iniciais; cria contas de
         Numerárias Auxiliares e troca mensagens com você. <b>Numerária Auxiliar</b>: mesma visão, sem criar contas nem mandar mensagens.
-        <b>CL</b>: vê painel, semana e panorama (com nomes) e troca mensagens com a cozinha como administração.
-        Se o CL também for comensal, dê o papel “CL” no cadastro dele (Editar).</p>
+        <b>CL</b>: administra a casa (mesmos poderes que você). Se o membro do CL também for comensal, dê o papel “CL”
+        no cadastro dele (Editar); aqui aparecem só os CLs sem cadastro de comensal.</p>
       ${kitchens || '<p class="muted">Nenhuma conta.</p>'}
       <form id="f-k" class="stack" style="margin-top:10px"><h3>Criar conta</h3>
         <label>Tipo <select name="role"><option value="cozinha">Administradora (cozinha)</option>
-          <option value="auxiliar">Numerária Auxiliar (cozinha)</option><option value="cl">CL</option></select></label>
+          <option value="auxiliar">Numerária Auxiliar (cozinha)</option><option value="admin">CL</option></select></label>
         ${accountFields()}
         <p class="alert small" id="err-k" hidden></p>
         <button type="submit">Criar conta</button></form></div>`;
@@ -1198,15 +1224,14 @@ function personForm(p) {
     <div id="accbox" class="stack" hidden>
       <label>E-mail <input type="email" name="email"></label>
       <label>Senha provisória (opcional) <input type="text" name="pw" minlength="6" autocomplete="off"></label>
-      <label>Papel <select name="role"><option value="comensal">Comensal</option><option value="admin">Administrador</option><option value="cl">CL</option></select></label>
+      <label>Papel <select name="role"><option value="comensal">Comensal</option><option value="admin">CL</option></select></label>
       <p class="muted small">Com senha provisória, passe-a à pessoa: ela troca no primeiro acesso. Sem senha, ela recebe
         um e-mail para criar a própria senha (pode cair no spam).</p>
     </div>`;
   const accountEdit = u ? `
     <p class="small">Login: <b>${esc(u.email)}</b></p>
     ${isMe ? '' : `<label>Papel <select name="role"><option value="comensal" ${u.role === 'comensal' ? 'selected' : ''}>Comensal</option>
-      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option>
-      <option value="cl" ${u.role === 'cl' ? 'selected' : ''}>CL</option></select></label>`}
+      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>CL</option></select></label>`}
     <button type="button" id="b-resetpw">Enviar e-mail para redefinir senha</button>` : accountNew;
   openDialog(`<form id="f-p" class="stack">
       <h3>${isNew ? 'Adicionar comensal' : 'Editar ' + esc(p.initials)}</h3>
@@ -1434,10 +1459,10 @@ async function viewEstatisticas() {
 // ---------- Mensagens (administrador ⇄ administradora da cozinha) ----------
 async function viewMensagens() {
   const msgs = await api.listMessages();
-  const canSend = isAdmin() || isCL() || S.role === 'cozinha';
+  const canSend = isAdmin() || S.role === 'cozinha';
   const myDir = isKitchen() ? 'k2a' : 'a2k';
-  const SENDER = { admin: 'Administrador', cl: 'CL', cozinha: 'Administradora' };
-  const label = (m) => `${SENDER[m.fromRole] || (m.dir === 'k2a' ? 'Cozinha' : 'Administrador')} → ${m.dir === 'k2a' ? 'Administração' : 'Cozinha'}`;
+  const SENDER = { admin: 'CL', cl: 'CL', cozinha: 'Administradora' };
+  const label = (m) => `${SENDER[m.fromRole] || (m.dir === 'k2a' ? 'Cozinha' : 'CL')} → ${m.dir === 'k2a' ? 'CL' : 'Cozinha'}`;
   const mine = inboxDir();
   // conversas: mensagem original + respostas (em ordem)
   const byId = new Map(msgs.map((m) => [m.id, m]));
@@ -1452,7 +1477,7 @@ async function viewMensagens() {
       ${canSend ? `<button class="link small" data-reply="${m.id}">↩ Responder</button>` : ''}</div>`).join('');
   main.innerHTML = `
     ${canSend ? `<form class="card stack" id="f-msg">
-      <h2>Nova mensagem ${isKitchen() ? 'para a administração' : 'para a cozinha'}</h2>
+      <h2>Nova mensagem ${isKitchen() ? 'para o CL' : 'para a cozinha'}</h2>
       <textarea name="text" rows="3" maxlength="1000" required></textarea>
       <div class="row"><button class="primary" type="submit">Enviar</button></div></form>` : ''}
     <div class="card"><h2>Mensagens</h2>${list || '<p class="muted">Nenhuma mensagem.</p>'}</div>`;
@@ -1526,7 +1551,7 @@ async function createAccountSafely(form, errBox, fn) {
   try { await fn(); } catch (e) {
     console.error(e);
     errBox.textContent = `Não foi possível criar a conta: ${errMsg(e)}` + (e?.code === 'auth/email-already-in-use'
-      ? ' Se foi uma tentativa anterior que ficou pela metade, peça ao administrador para apagar esse login no console do Firebase (Authentication → Usuários) e tente de novo.'
+      ? ' Se foi uma tentativa anterior que ficou pela metade, peça ao CL (ou ao gestor geral) para apagar esse login no console do Firebase (Authentication → Usuários) e tente de novo.'
       : e?.code ? ` (código: ${e.code})` : '');
     errBox.hidden = false;
   } finally { btn.disabled = false; }
@@ -1648,8 +1673,85 @@ function importDialog() {
   });
 }
 
+// ---------- Gestor geral: casas e seus CLs (não vê os dados internos das casas) ----------
+async function viewCasas() {
+  if (!S.isGestor) { location.hash = ''; return; }
+  const houses = (await api.listHouses()).sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
+  const admins = await Promise.all(houses.map((h) => api.listHouseAdmins(h.id)));
+  const slug = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
+  main.innerHTML = `
+    <div class="card"><h2>Casas</h2>
+      <p class="muted small">Como gestor geral, você cria as casas e as contas de CL. Os dados de cada casa (comensais,
+        refeições, mensagens) só são vistos por quem é da casa — você vê os da sua casa por ser CL dela.</p></div>
+    ${houses.map((h, i) => `<div class="card">
+      <div class="row spread"><div><b>${esc(h.name || h.id)}</b> <span class="muted small">(${esc(h.id)})</span>
+        ${h.id === S.houseId ? ' <span class="badge plus">sua casa</span>' : ''}</div>
+        <button class="link small" data-rename="${h.id}">renomear</button></div>
+      <div class="sub">CLs</div>
+      ${admins[i].map((u) => `<div class="list-item"><span>${esc(u.email)}${u.id === S.user.uid ? ' <span class="muted small">(você)</span>' : ''}</span>
+        ${u.id === S.user.uid ? '' : `<button class="danger small" data-rmcl="${u.id}" data-email="${esc(u.email)}">Remover acesso</button>`}</div>`).join('')
+        || '<p class="muted small">Nenhum CL ainda.</p>'}
+      <details style="margin-top:8px"><summary class="small">+ Novo CL desta casa</summary>
+        <form class="stack f-cl" data-house="${h.id}" style="margin-top:8px">${accountFields()}
+          <p class="alert small" hidden></p><button type="submit">Criar conta de CL</button></form></details>
+    </div>`).join('')}
+    <form class="card stack" id="f-house"><h2>Nova casa</h2>
+      <label>Nome <input name="hname" required maxlength="60" placeholder="ex.: Residência Ipê"></label>
+      <label>Identificador (letras minúsculas, números e hífen) <input name="hid" required pattern="[a-z0-9\\-]{2,30}" placeholder="ex.: ipe"></label>
+      <p class="muted small">Depois de criar a casa, crie a conta do primeiro CL; ele faz o resto (importa a planilha, cria a cozinha…).</p>
+      <div class="row"><button class="primary" type="submit">Criar casa</button></div></form>
+    ${houses.length ? `<div class="card stack"><h2>Migração do formato antigo</h2>
+      <p class="muted small">Uma vez só, na passagem para várias casas: copia os dados da versão anterior do app (que ficavam
+        fora das casas) para a casa escolhida e liga a ela todas as contas antigas. Os dados antigos não são apagados.</p>
+      <div class="row"><select id="mig-house">${houses.map((h) => `<option value="${h.id}" ${h.id === S.houseId ? 'selected' : ''}>${esc(h.name || h.id)}</option>`).join('')}</select>
+        <button id="b-mig">Migrar dados antigos</button></div>
+      <pre id="mig-log" class="small" hidden></pre></div>` : ''}`;
+
+  const fh = $('#f-house');
+  fh.hname.addEventListener('input', () => { if (!fh.hid.dataset.touched) fh.hid.value = slug(fh.hname.value); });
+  fh.hid.addEventListener('input', () => { fh.hid.dataset.touched = '1'; });
+  fh.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = slug(fh.hid.value);
+    if (houses.some((h) => h.id === id)) return toast('Já existe uma casa com esse identificador.');
+    guard(async () => {
+      await api.createHouse(id, fh.hname.value.trim());
+      toast('Casa criada.');
+      if (id === S.houseId && !S.house) { await loadSession(); }
+      route();
+    }, fh.querySelector('[type=submit]'));
+  });
+  $$('.f-cl').forEach((f) => f.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (f.pw.value && f.pw.value.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.');
+    createAccountSafely(f, $('.alert', f), async () => {
+      await api.createHouseAdmin(f.dataset.house, f.email.value.trim(), f.pw.value || undefined);
+      toast(f.pw.value ? 'CL criado.' : 'CL criado; a pessoa recebeu um e-mail para criar a senha.'); route();
+    });
+  }));
+  $$('[data-rmcl]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm(`Remover o acesso de ${b.dataset.email}?`)) return;
+    guard(async () => { await api.removeUserProfile(b.dataset.rmcl); route(); }, b);
+  }));
+  $$('[data-rename]').forEach((b) => b.addEventListener('click', () => {
+    const h = houses.find((x) => x.id === b.dataset.rename);
+    const name = prompt('Novo nome da casa:', h.name || h.id);
+    if (name && name.trim()) guard(async () => { await api.renameHouse(h.id, name.trim()); if (h.id === S.houseId) S.house.name = name.trim(); renderNav(); route(); }, b);
+  }));
+  $('#b-mig')?.addEventListener('click', (e) => {
+    const h = $('#mig-house').value;
+    if (!confirm(`Copiar os dados antigos para a casa "${h}" e ligar a ela todas as contas sem casa? Faça isso uma vez só.`)) return;
+    const log = $('#mig-log'); log.hidden = false; log.textContent = 'Migrando…\n';
+    guard(async () => {
+      const out = await api.migrateLegacyInto(h, (t) => { log.textContent += t + '\n'; });
+      log.textContent += `\nConcluído. Contas ligadas à casa: ${out.users ?? 0}.\nRecarregando…`;
+      setTimeout(() => location.reload(), 2500);
+    }, e.target);
+  });
+}
+
 const VIEWS = {
   painel: viewPainel, semana: viewSemana, minhas: viewMinhas, padrao: viewPadrao,
   temporarias: viewTemporarias, pessoas: viewPessoas, config: viewConfig, conta: viewConta,
-  estatisticas: viewEstatisticas, mensagens: viewMensagens, equipe: viewEquipe, panorama: viewPanorama,
+  estatisticas: viewEstatisticas, mensagens: viewMensagens, equipe: viewEquipe, panorama: viewPanorama, casas: viewCasas,
 };

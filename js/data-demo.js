@@ -2,7 +2,7 @@
 // Abra index.html?demo para usar. Serve para conhecer o app e testar a interface.
 import * as L from './logic.js';
 
-const KEY = 'comensais-demo-v2';
+const KEY = 'comensais-demo-v3';
 
 function seed() {
   const people = {}, names = {};
@@ -23,11 +23,12 @@ function seed() {
   add('jf', 'JF', 'Comensal JF', L.PRESETS.cafe_sexta.grid());
   add('sc', 'SC', 'Comensal SC', todas(), true);
   const users = {
-    'u-admin': { role: 'admin', personId: 'lk', email: 'admin@demo' },
+    'u-admin': { role: 'admin', personId: 'lk', email: 'admin@demo', houseId: 'ccbv', gestor: true },
     'u-gn': { role: 'comensal', personId: 'gn', email: 'gn@demo' },
     'u-cozinha': { role: 'cozinha', personId: null, email: 'cozinha@demo' },
     'u-aux': { role: 'auxiliar', personId: null, email: 'auxiliar@demo' },
-    'u-cl': { role: 'cl', personId: 'rv', email: 'cl@demo' },
+    'u-cl': { role: 'admin', personId: 'rv', email: 'cl@demo', houseId: 'ccbv' },
+    'u-cl2': { role: 'admin', personId: null, email: 'cl@outra.demo', houseId: 'outra' },
   };
   const t = L.today();
   const overrides = {
@@ -53,14 +54,29 @@ function seed() {
       { total: r(k), diet: 3 + (i % 2), early: (i + k) % 3 === 0 ? 1 : 0, late: k === 2 ? 1 : 0, takeaway: 0, extras: 0 }])) };
   }
   const events = {}, alerts = {};
-  return { users, people, names, overrides, periods, dayNotes, messages, daily, events, alerts, settings: { app: L.mergeSettings({}) }, bootstrap: true };
+  const houses = { ccbv: { name: 'CCBV (demo)', createdAt: 1 }, outra: { name: 'Outra casa (demo)', createdAt: 2 } };
+  return { users, people, names, overrides, periods, dayNotes, messages, daily, events, alerts, houses, settings: { app: L.mergeSettings({}) }, bootstrap: true };
 }
 
 export function createDemoApi() {
   let st;
   try { st = JSON.parse(localStorage.getItem(KEY)); } catch { st = null; }
   if (!st) st = seed();
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* sem storage */ } };
+  // Cada casa da demonstração tem os próprios dados; contas (users) e casas são comuns, como no Firebase
+  let main = st, curKey = KEY, curHouse = 'ccbv';
+  const reload = () => {
+    try {
+      const x = JSON.parse(localStorage.getItem(curKey));
+      if (!x) return;
+      if (curKey === KEY) { st = main = x; } else { st = { ...x, users: main.users, houses: main.houses }; }
+    } catch { /* */ }
+  };
+  const save = () => {
+    try {
+      localStorage.setItem(curKey, JSON.stringify(st));
+      if (st !== main) { main.users = st.users; main.houses = st.houses; localStorage.setItem(KEY, JSON.stringify(main)); }
+    } catch { /* sem storage */ }
+  };
   const list = (o) => Object.entries(o).map(([id, v]) => ({ id, ...structuredClone(v) }));
   const get = (o, id) => (o[id] ? { id, ...structuredClone(o[id]) } : null);
   const uid = () => Math.random().toString(36).slice(2, 10);
@@ -84,7 +100,28 @@ export function createDemoApi() {
     changePassword: async () => later(),
     setNewPassword: async () => later(),
 
-    getProfile: async (u) => later(get(st.users, u)),
+    getProfile: async (u) => later({ houseId: 'ccbv', ...get(st.users, u) }),
+    // Demonstração: uma casa só tem dados (CCBV); as outras existem para o gestor geral
+    setHouse(h) {
+      curHouse = h || 'ccbv';
+      if (!h || h === 'ccbv') { st = main; curKey = KEY; return; }
+      curKey = `${KEY}-${h}`;
+      let own = null;
+      try { own = JSON.parse(localStorage.getItem(curKey)); } catch { /* */ }
+      st = { people: {}, names: {}, overrides: {}, periods: {}, dayNotes: {}, messages: {}, daily: {}, events: {}, alerts: {},
+        settings: { app: L.mergeSettings({}) }, ...(own || {}), users: main.users, houses: main.houses };
+    },
+    getHouse: async (h = 'ccbv') => later(get(st.houses ||= {}, h)),
+    listHouses: async () => later(list(st.houses ||= {})),
+    async createHouse(id, name) { (st.houses ||= {})[id] = { name, createdAt: Date.now() }; save(); },
+    async renameHouse(id, name) { st.houses[id].name = name; save(); },
+    listHouseAdmins: async (h) => later(list(st.users).filter((u) => (u.houseId || 'ccbv') === h && u.role === 'admin')),
+    async createHouseAdmin(h, email) {
+      if (Object.values(st.users).some((x) => x.email === email)) throw Object.assign(new Error('e-mail em uso'), { code: 'auth/email-already-in-use' });
+      st.users['u-' + uid()] = { role: 'admin', houseId: h, personId: null, email }; save();
+    },
+    migrateLegacyInto: async () => ({}),
+    cleanupOld: async () => 0,
     bootstrapExists: async () => true,
     bootstrapAdmin: async () => {},
 
@@ -96,7 +133,7 @@ export function createDemoApi() {
     async updatePerson(pid, data) { Object.assign(st.people[pid], structuredClone(data)); save(); },
     listNames: async () => later(Object.fromEntries(list(st.names).map((n) => [n.id, n]))),
     getName: async (pid) => later(get(st.names, pid)),
-    listUsers: async () => later(list(st.users)),
+    listUsers: async () => later(list(st.users).filter((u) => (u.houseId || 'ccbv') === curHouse)),
 
     clearMustChange: async (u) => { if (st.users[u]) st.users[u].mustChange = false; save(); },
     async importUpdate(pid, person, name) {
@@ -126,9 +163,9 @@ export function createDemoApi() {
     },
     async createKitchen(email, pw, role = 'cozinha') {
       if (Object.values(st.users).some((x) => x.email === email)) throw Object.assign(new Error('e-mail em uso'), { code: 'auth/email-already-in-use' });
-      st.users['u-' + uid()] = { role, personId: null, email }; save();
+      st.users['u-' + uid()] = { role, personId: null, email, houseId: curHouse }; save();
     },
-    listAuxiliaries: async () => later(list(st.users).filter((u) => u.role === 'auxiliar')),
+    listAuxiliaries: async () => later(list(st.users).filter((u) => u.role === 'auxiliar' && (u.houseId || 'ccbv') === curHouse)),
     async removeUserProfile(u) { delete st.users[u]; save(); },
     async setUserRole(u, role) { st.users[u].role = role; save(); },
     async deletePerson(pid, u) {
@@ -184,6 +221,7 @@ export function createDemoApi() {
     async deleteDayNote(id) { delete st.dayNotes[id]; save(); },
 
     listMessages: async () => later(list(st.messages).sort((a, b) => b.createdAt - a.createdAt)),
+    countUnread: async (dir) => later(list(st.messages).filter((m) => m.dir === dir && !m.readAt).length),
     async sendMessage(dir, text, from, fromEmail, extra = {}) { st.messages[uid()] = { dir, text, from, fromEmail, ...extra, createdAt: Date.now(), readAt: null }; save(); },
     async markRead(id) { st.messages[id].readAt = Date.now(); save(); },
     async deleteMessage(id) { delete st.messages[id]; save(); },
@@ -193,17 +231,18 @@ export function createDemoApi() {
     async deleteEvent(date, meal) { delete (st.events ||= {})[`${date}_${meal}`]; save(); },
     async addAlert(a, by) { (st.alerts ||= {})[uid()] = { ...structuredClone(a), by, createdAt: Date.now(), ackAt: null, ackBy: null }; save(); },
     listAlerts: async () => later(list(st.alerts ||= {}).sort((a, b) => b.createdAt - a.createdAt)),
+    countOpenAlerts: async () => later(list(st.alerts ||= {}).filter((a) => !a.ackAt).length),
     async ackAlert(id, by) { Object.assign(st.alerts[id], { ackAt: Date.now(), ackBy: by }); save(); },
     async deleteAlert(id) { delete st.alerts[id]; save(); },
     async addCall(c, by) { (st.calls ||= {})[uid()] = { ...c, by, createdAt: Date.now(), seenAt: null, seenBy: null }; save(); },
     listCalls: async () => {
-      try { st = JSON.parse(localStorage.getItem(KEY)) || st; } catch { /* */ } // outra aba pode ter marcado "visto"
+      reload(); // outra aba pode ter marcado "visto"
       return later(list(st.calls ||= {}).sort((a, b) => b.createdAt - a.createdAt));
     },
     async markCallSeen(id, by) { Object.assign(st.calls[id], { seenAt: Date.now(), seenBy: by }); save(); },
     // Demonstração: confere a cada 3 s (outras abas gravam no mesmo localStorage)
     watchOpenCalls(cb) {
-      const tick = () => { try { st = JSON.parse(localStorage.getItem(KEY)) || st; } catch { /* */ } cb(list(st.calls ||= {}).filter((c) => !c.seenAt)); };
+      const tick = () => { reload(); cb(list(st.calls ||= {}).filter((c) => !c.seenAt)); };
       tick(); const h = setInterval(tick, 3000); return () => clearInterval(h);
     },
     listDaily: async (from, to) => later(list(st.daily).filter((x) => x.date >= from && x.date <= to)),

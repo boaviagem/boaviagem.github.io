@@ -53,15 +53,32 @@ Horários padrão (editáveis em Configurações): almoço +tarde 14:00, jantar 
 - **Pessoas → Panorama** (administrador): viagens/ausências, outras regras temporárias e aniversários do período,
   e um mapa de presença (refeições por dia; ✈ = ausência) para os próximos 7, 14 ou 30 dias.
 
+## Várias casas
+
+Cada casa é independente: seus dados ficam em `houses/{casa}/…` e só quem é da casa (`users.houseId`) tem acesso —
+garantido pelas regras do Firestore. As contas (`users`) são comuns.
+
+- **Gestor geral** (`users.gestor = true`): na aba **Casas**, cria casas e as contas de CL de cada uma. Não lê os dados
+  internos das casas (só os da própria casa, se também for CL dela).
+- **CL** (`role: 'admin'`): administra a casa.
+- O CL apaga automaticamente, uma vez por dia, registros com mais de 45 dias (alterações, observações, recados, alertas,
+  chamados, viagens encerradas) — os totais diários continuam nas estatísticas. Mantém o app leve e dentro do plano gratuito.
+
+### Migração do formato antigo (uma casa, dados na raiz) — uma vez
+1. No console do Firestore, na conta do gestor (`users/{uid}`), acrescentar `gestor: true` (booleano) e `houseId: "ccbv"` (texto).
+2. Publicar o novo `firestore.rules` (a partir daqui a versão antiga do app para de funcionar).
+3. Publicar o código novo (`git push`).
+4. Entrar como gestor → **Casas** → criar a casa `ccbv` → **Migrar dados antigos**. Os dados antigos não são apagados
+   (o gestor ainda pode lê-los). Para voltar atrás: publicar as regras e o código anteriores.
+
 ## Papéis de conta
 
 | Papel (`users.role`) | Nome no app | O que faz |
 |---|---|---|
-| `admin` | Administrador | tudo |
+| `admin` | CL | administra a casa |
 | `comensal` | Comensal | as próprias refeições |
 | `cozinha` | Administradora | painel/semana/estatísticas só com iniciais; cria Numerárias Auxiliares; mensagens |
 | `auxiliar` | Numerária Auxiliar | mesma visão da Administradora, sem criar contas nem mandar mensagens |
-| `cl` | CL | painel, semana e panorama **com nomes**; mensagens como administração (pode também ser comensal) |
 
 Mensagens: cada mensagem pode ser respondida (`replyTo`), formando conversas.
 
