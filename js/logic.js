@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   early: { cafe: '', almoco: '', jantar: '' },
   deadline: '08:15', // horário-limite para mudanças, no dia em que a cozinha é avisada
   normal: { cafe: '07:30', almoco: '12:30', jantar: '19:30' }, // horário normal (limite para se incluir = 1 h antes)
+  share: { cafe: 'none', almoco: 'none', jantar: 'none' },
 };
 
 export function mergeSettings(s) {
@@ -24,6 +25,8 @@ export function mergeSettings(s) {
     early: { ...DEFAULT_SETTINGS.early, ...(s.early || {}) },
     deadline: s.deadline || DEFAULT_SETTINGS.deadline,
     normal: { ...DEFAULT_SETTINGS.normal, ...(s.normal || {}) },
+    // o que os comensais veem de cada refeição: 'none' | 'count' | 'initials'
+    share: { ...DEFAULT_SETTINGS.share, ...(s.share || {}) },
   };
 }
 

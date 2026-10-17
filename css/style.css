@@ -97,6 +97,7 @@ tr.clickable:hover { background: var(--accent-soft); }
 .mealbtn .st { font-weight: 700; }
 .mealbtn.on .st { color: var(--accent); }
 .mealbtn .extra { font-size: .82rem; color: var(--info); }
+.mealbtn .crowd { font-size: .78rem; color: var(--muted); }
 .mealbtn .src { font-size: .75rem; color: var(--muted); }
 
 /* Editor de grade */

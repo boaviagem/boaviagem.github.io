@@ -6,7 +6,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, writeBatch,
-  orderBy, limit, onSnapshot, getCountFromServer,
+  orderBy, limit, onSnapshot, getCountFromServer, deleteField,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 export function createFirebaseApi(config) {
@@ -137,6 +137,16 @@ export function createFirebaseApi(config) {
     getName: (pid) => one(d('names', pid)),
     listUsers: async () => rows(await getDocs(query(col('users'), where('houseId', '==', H)))),
 
+    // Regimes (descrição): coleção à parte
+    listDiets: async () => Object.fromEntries(rows(await getDocs(col('diets'))).map((x) => [x.id, x.text || ''])),
+    // Uma vez: tira a descrição do regime de dentro de "people" (que os comensais podem ler) e põe em "diets"
+    async moveDiet(pid, text) {
+      const b = writeBatch(db);
+      b.set(d('diets', pid), { text: text || '' });
+      b.update(d('people', pid), { dietText: deleteField() });
+      await b.commit();
+    },
+    acceptAlert: (id, uid) => updateDoc(d('alerts', id), { acceptedAt: Date.now(), acceptedBy: uid }),
     clearMustChange: (uid) => updateDoc(d('users', uid), { mustChange: false }),
 
     // account: null | { email, password?, role } (sem password = e-mail para definir senha) | { linkSelfUid, email }
@@ -146,7 +156,9 @@ export function createFirebaseApi(config) {
       else if (account?.linkSelfUid) uid = account.linkSelfUid;
       const pid = doc(col('people')).id;
       const b = writeBatch(db);
-      b.set(d('people', pid), { ...person, uid, active: true, createdAt: Date.now() });
+      const { dietText, ...pers } = person; // regime vai para "diets" (os outros comensais não leem)
+      b.set(d('people', pid), { ...pers, uid, active: true, createdAt: Date.now() });
+      if (dietText) b.set(d('diets', pid), { text: dietText });
       b.set(d('names', pid), { fullName: name.fullName || '', email: account?.email || name.email || '' });
       if (uid && !account.linkSelfUid) b.set(d('users', uid), { role: account.role || 'comensal', personId: pid, email: account.email, mustChange, houseId: H });
       if (account?.linkSelfUid) b.set(d('users', uid), { personId: pid }, { merge: true });
@@ -155,7 +167,9 @@ export function createFirebaseApi(config) {
     },
     async updatePersonFull(pid, person, name, role, uid) {
       const b = writeBatch(db);
-      b.update(d('people', pid), { ...person, updatedAt: Date.now() });
+      const { dietText, ...pers } = person;
+      b.update(d('people', pid), { ...pers, updatedAt: Date.now() });
+      if (dietText !== undefined) b.set(d('diets', pid), { text: dietText || '' });
       b.set(d('names', pid), name, { merge: true });
       if (uid && role) b.set(d('users', uid), { role }, { merge: true });
       await b.commit();

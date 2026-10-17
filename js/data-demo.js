@@ -147,12 +147,16 @@ export function createDemoApi() {
         u = 'u-' + pid; st.users[u] = { role: account.role || 'comensal', personId: pid, email: account.email };
       }
       else if (account?.linkSelfUid) { u = account.linkSelfUid; st.users[u].personId = pid; }
-      st.people[pid] = { ...structuredClone(person), uid: u, active: true, createdAt: Date.now() };
+      const { dietText, ...pers } = person;
+      st.people[pid] = { ...structuredClone(pers), uid: u, active: true, createdAt: Date.now() };
+      if (dietText) (st.diets ||= {})[pid] = { text: dietText };
       st.names[pid] = { fullName: name.fullName || '', email: account?.email || '' };
       save(); return pid;
     },
     async updatePersonFull(pid, person, name, role, u) {
-      Object.assign(st.people[pid], structuredClone(person));
+      const { dietText, ...pers } = person;
+      Object.assign(st.people[pid], structuredClone(pers));
+      if (dietText !== undefined) (st.diets ||= {})[pid] = { text: dietText || '' };
       Object.assign(st.names[pid] ||= {}, name);
       if (u && role && st.users[u]) st.users[u].role = role;
       save();
@@ -233,6 +237,9 @@ export function createDemoApi() {
     listAlerts: async () => later(list(st.alerts ||= {}).sort((a, b) => b.createdAt - a.createdAt)),
     countOpenAlerts: async () => later(list(st.alerts ||= {}).filter((a) => !a.ackAt).length),
     async ackAlert(id, by) { Object.assign(st.alerts[id], { ackAt: Date.now(), ackBy: by }); save(); },
+    async acceptAlert(id, by) { Object.assign(st.alerts[id], { acceptedAt: Date.now(), acceptedBy: by }); save(); },
+    listDiets: async () => later(Object.fromEntries(Object.entries(st.diets ||= {}).map(([k, v]) => [k, v.text || '']))),
+    async moveDiet(pid, text) { (st.diets ||= {})[pid] = { text }; delete st.people[pid].dietText; save(); },
     async deleteAlert(id) { delete st.alerts[id]; save(); },
     async addCall(c, by) { (st.calls ||= {})[uid()] = { ...c, by, createdAt: Date.now(), seenAt: null, seenBy: null }; save(); },
     listCalls: async () => {

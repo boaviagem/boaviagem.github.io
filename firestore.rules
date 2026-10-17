@@ -71,6 +71,10 @@ service cloud.firestore {
       function isKitchen() { return inH() && me().role in ['cozinha', 'auxiliar']; }
       function owns(pid) { return inH() && me().get('personId', null) == pid; }
       function noNote() { return request.resource.data.get('note', '') == ''; }
+      // O CL pode deixar os comensais verem quantidade/siglas de cada refeição (settings.share); aí eles leem as marcações de todos
+      function shareOn() {
+        return inH() && get(/databases/$(db)/documents/houses/$(h)/settings/app).data.get('share', {}).values().hasAny(['count', 'initials']);
+      }
 
       // Nome da casa: os membros leem; só o gestor cria/altera
       allow read: if isGestor() || inH();
@@ -84,9 +88,15 @@ service cloud.firestore {
 
       // Comensais: iniciais, regime, regra padrão (sem nome completo)
       match /people/{pid} {
-        allow read: if isAdmin() || isKitchen() || owns(pid);
+        allow read: if isAdmin() || isKitchen() || owns(pid) || shareOn();
         allow create, delete: if isAdmin();
         allow update: if isAdmin() || (owns(pid) && onlyKeys(['defaultRule', 'birthday', 'updatedAt']));
+      }
+
+      // Descrição do regime (saúde): CL, cozinha e o próprio comensal — nunca os outros comensais
+      match /diets/{pid} {
+        allow read: if isAdmin() || isKitchen() || owns(pid);
+        allow write: if isAdmin();
       }
 
       // Nome completo e e-mail — invisíveis para a cozinha
@@ -97,7 +107,7 @@ service cloud.firestore {
 
       // Alterações pontuais (por dia e refeição). A cozinha lê — por isso, sem observação aqui.
       match /overrides/{id} {
-        allow read: if isAdmin() || isKitchen() || owns(resource.data.personId);
+        allow read: if isAdmin() || isKitchen() || owns(resource.data.personId) || shareOn();
         allow create: if noNote() && (isAdmin() || owns(request.resource.data.personId));
         allow update: if noNote() && (isAdmin() || (owns(resource.data.personId) && owns(request.resource.data.personId)));
         allow delete: if isAdmin() || owns(resource.data.personId);
@@ -123,7 +133,7 @@ service cloud.firestore {
 
       // Regras temporárias (viagens, períodos especiais)
       match /periods/{id} {
-        allow read: if isAdmin() || isKitchen() || owns(resource.data.personId);
+        allow read: if isAdmin() || isKitchen() || owns(resource.data.personId) || shareOn();
         allow create: if isAdmin() || owns(request.resource.data.personId);
         allow update: if isAdmin() || (owns(resource.data.personId) && owns(request.resource.data.personId));
         allow delete: if isAdmin() || owns(resource.data.personId);
@@ -131,7 +141,7 @@ service cloud.firestore {
 
       // Recados do CL para a cozinha, por dia (podem somar pessoas extras)
       match /dayNotes/{id} {
-        allow read: if isAdmin() || isKitchen();
+        allow read: if isAdmin() || isKitchen() || shareOn();
         allow write: if isAdmin();
       }
 
@@ -157,7 +167,9 @@ service cloud.firestore {
         allow read: if isAdmin() || isKitchen();
         allow create: if (inH() && request.resource.data.by == request.auth.uid && request.resource.data.ackAt == null)
           || isGestor(); // gestor: migração
-        allow update: if (isKitchen() || isAdmin()) && onlyKeys(['ackAt', 'ackBy']);
+        // cozinha: "Ciente"; CL: "Ciente" ou "Aceitar" (aceita a mudança sem esperar a cozinha, que continua vendo o alerta)
+        allow update: if (isKitchen() && onlyKeys(['ackAt', 'ackBy']))
+          || (isAdmin() && onlyKeys(['ackAt', 'ackBy', 'acceptedAt', 'acceptedBy']));
         allow delete: if isAdmin();
       }
 

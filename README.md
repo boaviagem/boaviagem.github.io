@@ -82,6 +82,14 @@ garantido pelas regras do Firestore. As contas (`users`) são comuns.
 
 Mensagens: cada mensagem pode ser respondida (`replyTo`), formando conversas.
 
+## O que os comensais veem e aceite do CL
+
+- **Configurações → O que os comensais veem** (por refeição): nada, quantidade ou siglas. Com quantidade/siglas, as regras
+  deixam os comensais do centro lerem as marcações de todos (`people`, `overrides`, `periods`, `dayNotes`); com “nada” em
+  todas, continua fechado. A descrição do regime fica em `diets/{pessoa}` (CL, cozinha e o próprio comensal).
+- **Alertas de mudança tardia:** o membro do CL pode **Aceitar** (não espera a cozinha); a cozinha continua vendo o alerta,
+  marcado “aceito pelo CL”, e dá o seu Ciente.
+
 ## Chamar o administrador
 
 No painel da cozinha (administradora e auxiliares), o botão **🔔 Chamar o administrador** registra um chamado

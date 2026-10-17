@@ -143,6 +143,14 @@ async function loadPeople() {
     [S.people, S.names] = await Promise.all([api.listPeople(), api.listNames()]);
   } else if (isKitchen()) {
     S.people = await api.listPeople(); S.names = {};
+  }
+  if (S.role === 'admin' || isKitchen()) {
+    // descrição do regime fica em "diets" (os comensais não leem); cadastros antigos ainda podem tê-la em "people"
+    let diets = {};
+    try { diets = await api.listDiets(); } catch (e) { console.warn('diets', e.code); }
+    const legacy = S.people.filter((p) => p.dietText && diets[p.id] === undefined);
+    for (const p of S.people) if (diets[p.id] !== undefined) p.dietText = diets[p.id];
+    if (isAdmin()) legacy.forEach((p) => api.moveDiet(p.id, p.dietText).catch((e) => console.warn('moveDiet', e.code)));
   } else {
     const [p, n] = S.myPid ? await Promise.all([api.getPerson(S.myPid), api.getName(S.myPid)]) : [null, null];
     S.people = p ? [p] : []; S.names = n ? { [S.myPid]: n } : {};
@@ -463,14 +471,18 @@ function alertsCard(alerts) {
     ${recent.map((a) => `<div class="alert-item ${a.ackAt ? 'acked' : ''}">
       <div><b>${esc(a.initials)}</b> <span class="muted small">· ${fmtDateTime(a.createdAt)}</span>
         <ul class="notes">${(a.items || []).map((i) => `<li>${esc(i.text)}</li>`).join('')}</ul></div>
-      <div class="small">${a.ackAt ? `<span class="muted">ciente ✓ ${fmtDateTime(a.ackAt)}</span>`
-        : isKitchen() ? `<button class="primary small" data-ack="${a.id}">Ciente</button>` : '<span class="muted">aguardando a cozinha</span>'}
+      <div class="small">${a.acceptedAt ? `<span class="badge plus">aceito pelo CL</span> ` : ''}${a.ackAt ? `<span class="muted">ciente ✓ ${fmtDateTime(a.ackAt)}</span>`
+        : isKitchen() ? `<button class="primary small" data-ack="${a.id}">Ciente</button>`
+        : `${a.acceptedAt ? '' : `<button class="primary small" data-accept="${a.id}">Aceitar</button> `}<span class="muted">aguardando ciente da cozinha</span>`}
         ${isAdmin() ? ` <button class="link small" data-delalert="${a.id}">apagar</button>` : ''}</div></div>`).join('')}</div>`;
 }
 function bindAlerts(alerts) {
   const ack = async (ids) => { await Promise.all(ids.map((id) => api.ackAlert(id, S.user.uid))); S.alerts = 0; refreshUnread(); route(); };
   $$('[data-ack]').forEach((b) => b.addEventListener('click', () => guard(() => ack([b.dataset.ack]), b)));
   $('[data-ackall]')?.addEventListener('click', (e) => guard(() => ack(alerts.filter((a) => !a.ackAt).map((a) => a.id)), e.target));
+  $$('[data-accept]').forEach((b) => b.addEventListener('click', () => guard(async () => {
+    await api.acceptAlert(b.dataset.accept, S.user.uid); toast('Mudança aceita. A cozinha continua vendo o alerta.'); route();
+  }, b)));
   $$('[data-delalert]').forEach((b) => b.addEventListener('click', () => guard(async () => { await api.deleteAlert(b.dataset.delalert); route(); }, b)));
 }
 
@@ -739,11 +751,32 @@ async function viewMinhas() {
   const [ovs0, pers, events, cnotes] = await Promise.all([api.listOverridesByPerson(person.id), api.listPeriodsByPerson(person.id),
     api.listEvents(t, L.addDays(t, S.daysAhead)), api.listNotesByPerson(person.id)]);
   const ovMap = L.overrideMap(L.mergeNotes(ovs0, cnotes));
+  // Se o CL liberou, mostra quantos (ou quem) vão comer em cada refeição
+  const share = S.settings.share;
+  let crowd = null;
+  if (L.MEALS.some((m) => share[m] !== 'none')) {
+    try {
+      const end = L.addDays(t, S.daysAhead);
+      const [all, ovsAll, persAll, dnAll] = await Promise.all([isAdmin() || isKitchen() ? S.people : api.listPeople(),
+        api.listOverridesRange(t, end), api.listPeriodsFrom(t), api.listDayNotes(t, end)]);
+      crowd = (d) => L.applyEvents(L.applyDayNotes(L.summarize(all, d, persAll, ovsAll, S.settings),
+        dnAll.filter((n) => n.date === d)), events.filter((e) => e.date === d));
+    } catch (e) { console.warn('share', e.code); }
+  }
+  const crowdLine = (sum, m) => {
+    if (!sum || share[m] === 'none') return '';
+    const s = sum[m];
+    if (share[m] === 'count' || s.event) return `👥 ${s.total}`;
+    const who = [...s.normal, ...s.early, ...s.late, ...s.takeaway].map((i) => i.initials).sort();
+    return `👥 ${s.total}: ${who.join(', ')}${s.extras ? ` +${s.extras}` : ''}`;
+  };
   const days = [];
   for (let i = 0; i < S.daysAhead; i++) {
     const d = L.addDays(t, i);
+    const daySum = crowd ? crowd(d) : null;
     const meals = L.MEALS.map((m) => {
       const r = L.resolve(person, d, m, pers, ovMap, S.settings);
+      const cl = crowdLine(daySum, m);
       const extra = [r.on && r.when !== 'N' ? `${L.WHEN_LABEL[r.when]}${r.timeShown ? ' ' + r.timeShown : ''}` : '',
         r.note ? `${r.note}${r.noteApproved ? '' : ' 🔒'}` : ''].filter(Boolean).join(' · ');
       const src0 = r.source === 'pontual' ? 'alterado' : r.source === 'temporária' ? `temporária${r.periodLabel ? ': ' + r.periodLabel : ''}` : 'padrão';
@@ -752,7 +785,7 @@ async function viewMinhas() {
       const bbq = events.some((e) => e.date === d && e.meal === m) ? ' 🔥 churrasco' : '';
       return `<button class="mealbtn ${r.on ? 'on' : 'off'} ${st}" data-d="${d}" data-m="${m}">
         <span><span class="st">${r.on ? '✓' : '✗'} ${L.MEAL_SHORT[m]}${bbq}</span>
-          ${extra ? `<br><span class="extra">${esc(extra)}</span>` : ''}</span>
+          ${extra ? `<br><span class="extra">${esc(extra)}</span>` : ''}${cl ? `<br><span class="crowd">${esc(cl)}</span>` : ''}</span>
         <span class="src">${esc(src)}</span></button>`;
     }).join('');
     days.push(`<div class="card day ${d === t ? 'today' : ''}"><h3>${L.fmtDate(d, true)}</h3>${meals}</div>`);
@@ -1313,13 +1346,19 @@ async function viewConfig() {
       <label>Horário-limite no dia do aviso à cozinha <input type="time" name="deadline" value="${esc(s.deadline)}" required></label>
       <p class="muted small">Avisos: almoço e jantar no próprio dia, café na véspera; na sexta, todo o fim de semana até o café de segunda.
         Depois do limite, quem mudar vê um alerta e a cozinha é avisada da mudança. Refeições já passadas ficam bloqueadas.</p>
+      <h2>O que os comensais veem</h2>
+      <p class="muted small">Em “Minhas refeições”, ao lado de cada refeição, os comensais podem ver quantos vão comer ou as siglas de quem vai.</p>
+      <div class="tablewrap"><table><tbody>${L.MEALS.map((m) => `<tr><th>${L.MEAL_SHORT[m]}</th><td><select name="share_${m}">
+        ${[['none', 'Nada'], ['count', 'Quantidade'], ['initials', 'Siglas (e quantidade)']].map(([v, l]) =>
+          `<option value="${v}" ${s.share[m] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>
       <div class="row"><button class="primary" type="submit">Salvar</button></div></form>
     ${DEMO ? '<div class="card"><h2>Demonstração</h2><button class="danger" id="b-demo-reset">Restaurar dados de exemplo</button></div>' : ''}`;
   const f = $('#f-cfg');
   f.addEventListener('submit', (e) => {
     e.preventDefault();
-    const ns = { early: {}, late: {}, normal: {}, deadline: f.deadline.value || '08:15' };
+    const ns = { early: {}, late: {}, normal: {}, share: {}, deadline: f.deadline.value || '08:15' };
     for (const m of L.MEALS) {
+      ns.share[m] = f[`share_${m}`].value;
       ns.early[m] = f[`early_${m}`].value; ns.late[m] = f[`late_${m}`].value; ns.normal[m] = f[`normal_${m}`].value || L.DEFAULT_SETTINGS.normal[m];
     }
     guard(async () => { await api.saveSettings(ns); S.settings = L.mergeSettings(ns); toast('Configurações salvas.'); }, f.querySelector('button'));
