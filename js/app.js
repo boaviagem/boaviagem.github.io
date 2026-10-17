@@ -24,7 +24,7 @@ const isAdmin = () => S.role === 'admin';
 const isKitchenRole = (r) => r === 'cozinha' || r === 'auxiliar';
 const isKitchen = () => isKitchenRole(S.role);
 // 'admin' = CL da casa (administra a casa). O gestor geral (profile.gestor) cuida das casas.
-const ROLE_NAME = { admin: 'CL', comensal: 'comensal', cozinha: 'Administradora', auxiliar: 'Numerária Auxiliar' };
+const ROLE_NAME = { admin: 'Membro do CL', comensal: 'comensal', cozinha: 'Administradora', auxiliar: 'Numerária Auxiliar' };
 const canSeeNames = () => isAdmin();
 const fmtDateTime = (ms) => new Date(ms).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const personById = (id) => S.people.find((p) => p.id === id);
@@ -220,12 +220,12 @@ function renderLogin() {
       <h2>Modo demonstração</h2>
       <p class="muted small">${configured ? '' : 'O Firebase ainda não foi configurado (js/firebase-config.js). '}
       Os dados ficam apenas neste navegador. Entre como:</p>
-      <button class="primary" data-who="u-admin">CL e gestor geral (LK)</button>
+      <button class="primary" data-who="u-admin">Membro do CL e gestor geral (LK)</button>
       <button data-who="u-gn">Comensal (GN)</button>
       <button data-who="u-cozinha">Administradora (cozinha)</button>
       <button data-who="u-aux">Numerária Auxiliar (cozinha)</button>
-      <button data-who="u-cl">CL (RV)</button>
-      <button data-who="u-cl2">CL de outro centro</button>
+      <button data-who="u-cl">Membro do CL (RV)</button>
+      <button data-who="u-cl2">Membro do CL de outro centro</button>
     </div>`;
     $$('[data-who]').forEach((b) => b.addEventListener('click', () => api.signIn(b.dataset.who)));
     return;
@@ -251,7 +251,7 @@ function renderLogin() {
 function renderBootstrap() {
   main.innerHTML = `<div class="card login stack">
     <h2>Primeiro acesso</h2>
-    <p>Instalação nova. Tornar <b>${esc(S.user.email)}</b> o gestor geral e CL do centro principal?</p>
+    <p>Instalação nova. Tornar <b>${esc(S.user.email)}</b> o gestor geral e membro do CL do centro principal?</p>
     <button class="primary" id="b-boot">Sim, sou o gestor</button>
     <button id="b-out">Sair</button></div>`;
   $('#b-boot').addEventListener('click', (e) => guard(async () => {
@@ -437,7 +437,7 @@ function dietCard() {
 // ---------- Alertas: mudanças depois do horário de aviso ----------
 async function sendAlert(person, items) {
   if (!items.length) return;
-  await api.addAlert({ personId: person?.id || null, initials: person ? person.initials : 'CL', items }, S.user.uid);
+  await api.addAlert({ personId: person?.id || null, initials: person ? person.initials : 'Membro do CL', items }, S.user.uid);
 }
 // Para o administrador: alerta se a refeição já foi avisada (churrasco, +pessoas, recados)
 async function adminLateAlert(date, meal, text) {
@@ -1095,15 +1095,15 @@ async function viewPessoas() {
       <span class="row"><button id="b-import">Importar planilha</button><button class="primary" id="b-add">+ Adicionar</button></span></div>
       ${!S.myPid ? '<p class="alert small">Você ainda não está cadastrado como comensal. Use “+ Adicionar” e escolha “É a minha conta”.</p>' : ''}
       ${rows || '<p class="muted">Ninguém cadastrado.</p>'}</div>
-    <div class="card"><h2>Cozinha e CL</h2>
+    <div class="card"><h2>Cozinha e membros do CL</h2>
       <p class="muted small"><b>Administradora</b> (cozinha): vê totais, horários, regimes e observações, só com iniciais; cria contas de
         Numerárias Auxiliares e troca mensagens com você. <b>Numerária Auxiliar</b>: mesma visão, sem criar contas nem mandar mensagens.
-        <b>CL</b>: administra o centro (mesmos poderes que você). Se o membro do CL também for comensal, dê o papel “CL”
-        no cadastro dele (Editar); aqui aparecem só os CLs sem cadastro de comensal.</p>
+        <b>Membro do CL</b>: administra o centro (mesmos poderes que você). Se o membro do CL também for comensal, dê o
+        papel “Membro do CL” no cadastro dele (Editar); aqui aparecem só os membros do CL sem cadastro de comensal.</p>
       ${kitchens || '<p class="muted">Nenhuma conta.</p>'}
       <form id="f-k" class="stack" style="margin-top:10px"><h3>Criar conta</h3>
         <label>Tipo <select name="role"><option value="cozinha">Administradora (cozinha)</option>
-          <option value="auxiliar">Numerária Auxiliar (cozinha)</option><option value="admin">CL</option></select></label>
+          <option value="auxiliar">Numerária Auxiliar (cozinha)</option><option value="admin">Membro do CL</option></select></label>
         ${accountFields()}
         <p class="alert small" id="err-k" hidden></p>
         <button type="submit">Criar conta</button></form></div>`;
@@ -1225,14 +1225,14 @@ function personForm(p) {
     <div id="accbox" class="stack" hidden>
       <label>E-mail <input type="email" name="email"></label>
       <label>Senha provisória (opcional) <input type="text" name="pw" minlength="6" autocomplete="off"></label>
-      <label>Papel <select name="role"><option value="comensal">Comensal</option><option value="admin">CL</option></select></label>
+      <label>Papel <select name="role"><option value="comensal">Comensal</option><option value="admin">Membro do CL</option></select></label>
       <p class="muted small">Com senha provisória, passe-a à pessoa: ela troca no primeiro acesso. Sem senha, ela recebe
         um e-mail para criar a própria senha (pode cair no spam).</p>
     </div>`;
   const accountEdit = u ? `
     <p class="small">Login: <b>${esc(u.email)}</b></p>
     ${isMe ? '' : `<label>Papel <select name="role"><option value="comensal" ${u.role === 'comensal' ? 'selected' : ''}>Comensal</option>
-      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>CL</option></select></label>`}
+      <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Membro do CL</option></select></label>`}
     <button type="button" id="b-resetpw">Enviar e-mail para redefinir senha</button>` : accountNew;
   openDialog(`<form id="f-p" class="stack">
       <h3>${isNew ? 'Adicionar comensal' : 'Editar ' + esc(p.initials)}</h3>
@@ -1682,24 +1682,24 @@ async function viewCasas() {
   const slug = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
   main.innerHTML = `
     <div class="card"><h2>Centros</h2>
-      <p class="muted small">Como gestor geral, você cria os centros e as contas de CL. Os dados de cada centro (comensais,
-        refeições, mensagens) só são vistos por quem é do centro — você vê os do seu centro por ser CL dele.</p></div>
+      <p class="muted small">Como gestor geral, você cria os centros e as contas dos membros do CL. Os dados de cada centro (comensais,
+        refeições, mensagens) só são vistos por quem é do centro — você vê os do seu centro por ser membro do CL dele.</p></div>
     ${houses.map((h, i) => `<div class="card">
       <div class="row spread"><div><b>${esc(h.name || h.id)}</b> <span class="muted small">(${esc(h.id)})</span>
         ${h.id === S.houseId ? ' <span class="badge plus">seu centro</span>' : ''}</div>
         <button class="link small" data-rename="${h.id}">renomear</button></div>
-      <div class="sub">CLs</div>
+      <div class="sub">Membros do CL</div>
       ${admins[i].map((u) => `<div class="list-item"><span>${esc(u.email)}${u.id === S.user.uid ? ' <span class="muted small">(você)</span>' : ''}</span>
         ${u.id === S.user.uid ? '' : `<button class="danger small" data-rmcl="${u.id}" data-email="${esc(u.email)}">Remover acesso</button>`}</div>`).join('')
-        || '<p class="muted small">Nenhum CL ainda.</p>'}
-      <details style="margin-top:8px"><summary class="small">+ Novo CL deste centro</summary>
+        || '<p class="muted small">Nenhum membro do CL ainda.</p>'}
+      <details style="margin-top:8px"><summary class="small">+ Novo membro do CL deste centro</summary>
         <form class="stack f-cl" data-house="${h.id}" style="margin-top:8px">${accountFields()}
-          <p class="alert small" hidden></p><button type="submit">Criar conta de CL</button></form></details>
+          <p class="alert small" hidden></p><button type="submit">Criar conta de membro do CL</button></form></details>
     </div>`).join('')}
     <form class="card stack" id="f-house"><h2>Novo centro</h2>
       <label>Nome <input name="hname" required maxlength="60" placeholder="ex.: Centro Ipê"></label>
       <label>Identificador (letras minúsculas, números e hífen) <input name="hid" required pattern="[a-z0-9\\-]{2,30}" placeholder="ex.: ipe"></label>
-      <p class="muted small">Depois de criar o centro, crie a conta do primeiro CL; ele faz o resto (importa a planilha, cria a cozinha…).</p>
+      <p class="muted small">Depois de criar o centro, crie a conta do primeiro membro do CL; ele faz o resto (importa a planilha, cria a cozinha…).</p>
       <div class="row"><button class="primary" type="submit">Criar centro</button></div></form>
     ${houses.length ? `<div class="card stack"><h2>Migração do formato antigo</h2>
       <p class="muted small">Uma vez só, na passagem para vários centros: copia os dados da versão anterior do app (que ficavam
@@ -1727,7 +1727,7 @@ async function viewCasas() {
     if (f.pw.value && f.pw.value.length < 6) return toast('A senha precisa ter pelo menos 6 caracteres.');
     createAccountSafely(f, $('.alert', f), async () => {
       await api.createHouseAdmin(f.dataset.house, f.email.value.trim(), f.pw.value || undefined);
-      toast(f.pw.value ? 'CL criado.' : 'CL criado; a pessoa recebeu um e-mail para criar a senha.'); route();
+      toast(f.pw.value ? 'Membro do CL criado.' : 'Membro do CL criado; a pessoa recebeu um e-mail para criar a senha.'); route();
     });
   }));
   $$('[data-rmcl]').forEach((b) => b.addEventListener('click', () => {
