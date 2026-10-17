@@ -148,7 +148,7 @@ async function loadPeople() {
     // descrição do regime fica em "diets" (os comensais não leem); cadastros antigos ainda podem tê-la em "people"
     let diets = {};
     try { diets = await api.listDiets(); } catch (e) { console.warn('diets', e.code); }
-    const legacy = S.people.filter((p) => p.dietText && diets[p.id] === undefined);
+    const legacy = S.people.filter((p) => 'dietText' in p && diets[p.id] === undefined);
     for (const p of S.people) if (diets[p.id] !== undefined) p.dietText = diets[p.id];
     if (isAdmin()) legacy.forEach((p) => api.moveDiet(p.id, p.dietText).catch((e) => console.warn('moveDiet', e.code)));
   } else {
