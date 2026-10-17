@@ -138,8 +138,9 @@ service cloud.firestore {
       // Mensagens: lado do CL (a2k) ⇄ lado da cozinha (k2a). Só a Administradora envia pela cozinha.
       match /messages/{id} {
         allow read: if isAdmin() || isKitchen();
-        allow create: if request.resource.data.from == request.auth.uid
-          && ((isAdmin() && request.resource.data.dir == 'a2k') || (isChief() && request.resource.data.dir == 'k2a'));
+        allow create: if (request.resource.data.from == request.auth.uid
+          && ((isAdmin() && request.resource.data.dir == 'a2k') || (isChief() && request.resource.data.dir == 'k2a')))
+          || isGestor(); // gestor: migração/cópia de mensagens de outros autores
         allow update: if onlyKeys(['readAt'])
           && ((isAdmin() && resource.data.dir == 'k2a') || (isChief() && resource.data.dir == 'a2k'));
         allow delete: if isAdmin();
@@ -154,7 +155,8 @@ service cloud.firestore {
       // Alertas para a cozinha: mudanças feitas depois do horário de aviso
       match /alerts/{id} {
         allow read: if isAdmin() || isKitchen();
-        allow create: if inH() && request.resource.data.by == request.auth.uid && request.resource.data.ackAt == null;
+        allow create: if (inH() && request.resource.data.by == request.auth.uid && request.resource.data.ackAt == null)
+          || isGestor(); // gestor: migração
         allow update: if (isKitchen() || isAdmin()) && onlyKeys(['ackAt', 'ackBy']);
         allow delete: if isAdmin();
       }
@@ -162,7 +164,8 @@ service cloud.firestore {
       // Chamados da cozinha para o CL ("🔔 Chamar o CL")
       match /calls/{id} {
         allow read: if isAdmin() || isKitchen();
-        allow create: if isKitchen() && request.resource.data.by == request.auth.uid && request.resource.data.seenAt == null;
+        allow create: if (isKitchen() && request.resource.data.by == request.auth.uid && request.resource.data.seenAt == null)
+          || isGestor(); // gestor: migração
         allow update: if isAdmin() && onlyKeys(['seenAt', 'seenBy']);
         allow delete: if isAdmin();
       }
