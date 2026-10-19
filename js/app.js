@@ -133,7 +133,7 @@ const inboxDir = () => (isAdmin() ? 'k2a' : S.role === 'cozinha' ? 'a2k' : null)
 async function refreshUnread() {
   try {
     if (inboxDir()) S.unread = await api.countUnread(inboxDir());
-    if (isKitchen()) S.alerts = await api.countOpenAlerts();
+    if (isKitchen()) S.alerts = (await api.listAlerts()).filter((a) => !a.ackAt && alertActive(a)).length;
     renderNav();
   } catch (e) { console.warn(e); }
 }
@@ -462,8 +462,10 @@ async function lateRuleCheck(person, change) {
   return items;
 }
 
+// Alerta ainda relevante: alguma das refeições dele ainda não passou
+const alertActive = (a) => (a.items || []).some((i) => !i.date || !i.meal || L.mealStatus(i.date, i.meal, S.settings) !== 'past');
 function alertsCard(alerts) {
-  const recent = alerts.filter((a) => !a.ackAt || Date.now() - a.createdAt < 2 * 864e5);
+  const recent = alerts.filter(alertActive).filter((a) => !a.ackAt || Date.now() - a.createdAt < 2 * 864e5);
   if (!recent.length) return '';
   const pending = recent.filter((a) => !a.ackAt).length;
   return `<div class="card alerts"><div class="row spread"><div class="sub" style="margin:0">⚠ Mudanças depois do aviso${pending ? ` (${pending} nova${pending > 1 ? 's' : ''})` : ''}</div>
@@ -479,7 +481,7 @@ function alertsCard(alerts) {
 function bindAlerts(alerts) {
   const ack = async (ids) => { await Promise.all(ids.map((id) => api.ackAlert(id, S.user.uid))); S.alerts = 0; refreshUnread(); route(); };
   $$('[data-ack]').forEach((b) => b.addEventListener('click', () => guard(() => ack([b.dataset.ack]), b)));
-  $('[data-ackall]')?.addEventListener('click', (e) => guard(() => ack(alerts.filter((a) => !a.ackAt).map((a) => a.id)), e.target));
+  $('[data-ackall]')?.addEventListener('click', (e) => guard(() => ack(alerts.filter((a) => !a.ackAt && alertActive(a)).map((a) => a.id)), e.target));
   $$('[data-accept]').forEach((b) => b.addEventListener('click', () => guard(async () => {
     await api.acceptAlert(b.dataset.accept, S.user.uid); toast('Mudança aceita. A cozinha continua vendo o alerta.'); route();
   }, b)));
