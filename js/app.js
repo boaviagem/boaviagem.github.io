@@ -299,11 +299,11 @@ function renderNoProfile() {
 }
 
 // ---------- Painel (admin e cozinha) ----------
-function mealCard(meal, s, date) {
+function mealCard(meal, s, date, dateLabel = '') {
   const chips = (arr, cls, timeFn) => `<div class="chips">${arr.map((i) => chip(i, cls, timeFn?.(i), meal)).join('')}</div>`;
   const parts = [];
   const ev = s.event;
-  parts.push(`<div class="meal-head"><h3>${L.MEAL_LABEL[meal]}${ev ? ' <span class="badge bbq">🔥 churrasco</span>' : ''}</h3><span class="total">${s.total}</span></div>`);
+  parts.push(`<div class="meal-head"><h3>${L.MEAL_LABEL[meal]}${dateLabel ? ` <span class="muted small">· ${dateLabel}</span>` : ''}${ev ? ' <span class="badge bbq">🔥 churrasco</span>' : ''}</h3><span class="total">${s.total}</span></div>`);
   if (ev) {
     parts.push(`<div class="event">🔥 <b>Churrasco</b>: ${Number(ev.count) || 0} participantes · ${esc(L.AUDIENCE[ev.audience] || ev.audience || '')}
       ${ev.note ? `<br><span class="small">${esc(ev.note)}</span>` : ''}${s.extras ? `<br><span class="small">+ ${s.extras} extra(s)</span>` : ''}</div>`);
@@ -344,7 +344,7 @@ function mealCard(meal, s, date) {
       ${L.isBbqMeal(date, meal) || ev ? `<button class="small" data-bbq="${meal}">🔥 Churrasco</button>` : ''}
       <button class="small" data-other="${meal}">Alterar pessoa…</button></div>`);
   }
-  return `<section class="card">${parts.join('')}</section>`;
+  return `<section class="card" data-date="${date}">${parts.join('')}</section>`;
 }
 
 function dayNoteItem(n) {
@@ -609,9 +609,20 @@ function bindDayNoteDeletes(notes = []) {
   }));
 }
 
+const PMODE_KEY = 'comensais-painel-modo';
+const painelMode = () => { try { return localStorage.getItem(PMODE_KEY) === 'aviso' ? 'aviso' : 'dia'; } catch { return 'dia'; } };
+
 async function viewPainel() {
   const date = S.dashDate;
-  const { sum, notes, ovs, pers, events, cnotes } = await daySummary(date);
+  const mode = painelMode();
+  const next = L.addDays(date, 1);
+  // "Aviso": almoço e jantar do dia + café do dia seguinte (o bloco avisado à cozinha)
+  const ctx = { [date]: await daySummary(date) };
+  if (mode === 'aviso') ctx[next] = await daySummary(next);
+  const { notes } = ctx[date];
+  const allNotes = Object.values(ctx).flatMap((c) => c.notes);
+  const cnotes = Object.values(ctx).flatMap((c) => c.cnotes);
+  const cards = mode === 'aviso' ? [['almoco', date], ['jantar', date], ['cafe', next]] : L.MEALS.map((m) => [m, date]);
   const general = notes.filter((n) => !n.meal);
   const alerts = isAdmin() || isKitchen() ? await api.listAlerts() : [];
   main.innerHTML = `
@@ -626,13 +637,15 @@ async function viewPainel() {
       <button id="b-reload">Atualizar</button>
       ${isAdmin() ? '<button id="b-note">+ Recado para a cozinha</button>' : ''}
       ${isAdmin() ? `<label class="check"><input type="checkbox" id="ck-names" ${S.showNames ? 'checked' : ''}> mostrar nomes</label>` : ''}
+      <span class="seg pmode">${[['dia', 'Dia'], ['aviso', 'Almoço, jantar e café seguinte']].map(([v, l]) =>
+        `<label><input type="radio" name="pmode" value="${v}" ${mode === v ? 'checked' : ''}> ${l}</label>`).join('')}</span>
     </div>
     ${isKitchen() ? await kitchenCallCard() : ''}
     ${alertsCard(alerts)}
     ${birthdayCard(date)}
     ${general.length ? `<div class="card recado"><div class="sub" style="margin-top:0">Recados do CL</div>
       <ul class="notes">${general.map(dayNoteItem).join('')}</ul></div>` : ''}
-    <div class="grid3">${L.MEALS.map((m) => mealCard(m, sum[m], date)).join('')}</div>
+    <div class="grid3">${cards.map(([m, d]) => mealCard(m, ctx[d].sum[m], d, d !== date ? L.fmtDate(d) : '')).join('')}</div>
     ${dietCard()}
     ${isAdmin() ? '<p class="muted small">Toque numa pessoa para tirá-la da refeição, mudar o horário ou deixar observação.</p>' : ''}
     <p class="muted small" style="margin-top:12px"><span class="chip diet">XX</span> = regime ·
@@ -644,7 +657,9 @@ async function viewPainel() {
   S.swipe = (dir) => { S.dashDate = L.addDays(date, dir); route(); };
   $('#dash-date').addEventListener('change', (e) => { if (e.target.value) { S.dashDate = e.target.value; route(); } });
   $('#b-reload').addEventListener('click', () => route());
+  $$('[name=pmode]').forEach((r) => r.addEventListener('change', () => { try { localStorage.setItem(PMODE_KEY, r.value); } catch { /* */ } route(); }));
   $('#b-note')?.addEventListener('click', () => addDayNoteDialog(date));
+  const dOf = (el) => el.closest('section[data-date]')?.dataset.date || date;
   bindAlerts(alerts);
   $('#b-call')?.addEventListener('click', callDialog);
   const noteById = (id) => cnotes.find((n) => n.id === id);
@@ -654,31 +669,33 @@ async function viewPainel() {
     toast(b.dataset.v === '1' ? 'Observação liberada para a cozinha (sem o autor).' : 'Observação ocultada da cozinha.'); route();
   }, b)));
   $$('[data-editnote]').forEach((b) => b.addEventListener('click', () => editNoteDialog(noteById(b.dataset.editnote))));
-  $$('[data-plus]').forEach((b) => b.addEventListener('click', () => plusPeopleDialog(date, b.dataset.plus)));
-  $$('[data-bbq]').forEach((b) => b.addEventListener('click', () => bbqDialog(date, b.dataset.bbq, events.find((e) => e.meal === b.dataset.bbq))));
+  $$('[data-plus]').forEach((b) => b.addEventListener('click', () => plusPeopleDialog(dOf(b), b.dataset.plus)));
+  $$('[data-bbq]').forEach((b) => b.addEventListener('click', () => {
+    const d = dOf(b); bbqDialog(d, b.dataset.bbq, ctx[d].events.find((e) => e.meal === b.dataset.bbq));
+  }));
   if (isAdmin()) {
-    const ovMap = L.overrideMap(ovs);
-    const open = (pid, meal) => { const p = personById(pid); if (p) editMeal(p, date, meal, pers, ovMap); };
+    const ovMapOf = (d) => L.overrideMap(ctx[d].ovs);
+    const open = (pid, meal, d) => { const p = personById(pid); if (p) editMeal(p, d, meal, ctx[d].pers, ovMapOf(d)); };
     $$('.chip[data-pid]').forEach((c) => {
-      c.addEventListener('click', () => open(c.dataset.pid, c.dataset.meal));
-      c.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(c.dataset.pid, c.dataset.meal); });
+      c.addEventListener('click', () => open(c.dataset.pid, c.dataset.meal, dOf(c)));
+      c.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(c.dataset.pid, c.dataset.meal, dOf(c)); });
     });
     $$('[data-other]').forEach((b) => b.addEventListener('click', () => {
-      const meal = b.dataset.other;
+      const meal = b.dataset.other, d = dOf(b), ovMap = ovMapOf(d);
       const opts = S.people.filter((p) => p.active !== false).map((p) => {
-        const r = L.resolve(p, date, meal, pers, ovMap, S.settings);
+        const r = L.resolve(p, d, meal, ctx[d].pers, ovMap, S.settings);
         return `<option value="${p.id}">${esc(p.initials)} — ${esc(fullName(p.id))} (${r.on ? 'faz' : 'não faz'})</option>`;
       }).join('');
-      openDialog(`<form id="f-other" class="stack"><h3>${L.MEAL_LABEL[meal]} — ${L.fmtDate(date, true)}</h3>
+      openDialog(`<form id="f-other" class="stack"><h3>${L.MEAL_LABEL[meal]} — ${L.fmtDate(d, true)}</h3>
           <label>Pessoa <select name="pid">${opts}</select></label>
           <div class="row spread"><span></span><span class="row"><button type="button" data-close>Cancelar</button>
           <button class="primary" type="submit">Continuar</button></span></div></form>`, (root) => {
         const f = $('#f-other', root);
-        f.addEventListener('submit', (e) => { e.preventDefault(); open(f.pid.value, meal); });
+        f.addEventListener('submit', (e) => { e.preventDefault(); open(f.pid.value, meal, d); });
       });
     }));
   }
-  bindDayNoteDeletes(notes);
+  bindDayNoteDeletes(allNotes);
   $('#ck-names')?.addEventListener('change', (e) => { S.showNames = e.target.checked; route(); });
 }
 

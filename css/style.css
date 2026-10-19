@@ -178,6 +178,8 @@ details.diets ul { margin-top: 8px; }
 .msg.reply { margin-left: 18px; padding-left: 10px; border-left: 3px solid var(--line); }
 blockquote.quote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); color: var(--muted); white-space: pre-wrap; }
 
+.seg.pmode label { font-size: .85rem; padding: 4px 10px; }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }
