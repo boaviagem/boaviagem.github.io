@@ -439,7 +439,7 @@ function dietCard() {
   const diet = S.people.filter((p) => p.active !== false && p.diet);
   if (!diet.length) return '';
   return `<details class="card diets"><summary><b>Regimes (${diet.length})</b> <span class="small muted">— toque para ver</span></summary>
-    <ul class="notes">${diet.map((p) => `<li><span class="chip diet">${esc(p.initials)}</span> ${p.dietText ? esc(p.dietText) : '<span class="muted">(sem descrição)</span>'}</li>`).join('')}</ul></details>`;
+    <ul class="notes">${diet.map((p) => `<li><span class="chip diet">${esc(p.initials)}</span> ${p.dietText ? `<span class="diettext">${esc(p.dietText)}</span>` : '<span class="muted">(sem descrição)</span>'}</li>`).join('')}</ul></details>`;
 }
 
 // ---------- Alertas: mudanças depois do horário de aviso ----------
@@ -1133,7 +1133,7 @@ async function viewPessoas() {
     const acc = u ? `${esc(u.email || S.names[p.id]?.email || '')} · ${ROLE_NAME[u.role] || u.role}` : (p.guest ? 'convidado' : 'sem conta');
     return `<div class="list-item ${p.active === false ? 'inactive' : ''}">
       <div><strong>${esc(p.initials)}</strong> ${p.diet ? '<span class="badge">regime</span>' : ''} ${esc(fullName(p.id))}${p.birthday ? ` <span class="small muted">🎂 ${L.fmtBday(p.birthday)}</span>` : ''}
-        ${p.diet && p.dietText ? `<br><span class="small" style="color:var(--diet)">${esc(p.dietText)}</span>` : ''}
+        ${p.diet && p.dietText ? `<br><span class="small diettext" style="color:var(--diet)">${esc(p.dietText)}</span>` : ''}
         <br><span class="small muted">${acc}${p.active === false ? ' · inativo' : ''}${p.uid === S.user.uid ? ' · você' : ''}</span></div>
       <button data-edit="${p.id}">Editar</button></div>`;
   }).join('');
@@ -1291,7 +1291,7 @@ function personForm(p) {
       <div class="row"><label style="width:90px">Iniciais <input name="initials" maxlength="4" required value="${esc(p?.initials)}" style="text-transform:uppercase"></label>
         <label style="flex:1">Nome e sobrenome <input name="fullName" value="${esc(p ? fullName(p.id) : '')}"></label></div>
       <label class="check"><input type="checkbox" name="diet" ${p?.diet ? 'checked' : ''}> Faz regime</label>
-      <label id="dietbox">Regime (a cozinha vê) <textarea name="dietText" rows="2" maxlength="300" placeholder="ex.: sem sal; sem açúcar; pouca gordura">${esc(p?.dietText)}</textarea></label>
+      <label id="dietbox">Regime (a cozinha vê) <textarea name="dietText" rows="6" maxlength="1000" placeholder="ex.: sem sal; sem açúcar; pouca gordura. Pode usar várias linhas.">${esc(p?.dietText)}</textarea></label>
       <div><span class="small muted">Aniversário (a cozinha vê)</span> ${bdaySelects(p?.birthday)}</div>
       <label class="check"><input type="checkbox" name="guest" ${p?.guest ? 'checked' : ''}> Convidado</label>
       ${isNew ? `<label>Regra padrão inicial <select name="preset">${presetOptions('todas')}</select></label>

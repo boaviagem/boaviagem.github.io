@@ -180,6 +180,9 @@ blockquote.quote { margin: 0; padding: 6px 10px; border-left: 3px solid var(--li
 
 .seg.pmode label { font-size: .85rem; padding: 4px 10px; }
 
+.diettext { white-space: pre-wrap; }
+textarea[name=dietText] { resize: vertical; min-height: 7em; }
+
 /* Estatísticas */
 .tiles { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 14px; }
 .tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; }
